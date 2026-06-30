@@ -1,0 +1,306 @@
+# ============================================
+# BackHaulBid Infrastructure Stack
+# docker-compose.yml
+# ============================================
+# Usage: docker compose up -d
+
+services:
+
+  # ──────────────────────────────────────────
+  # PostgreSQL - Core Services Database
+  # ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: backhaulbid-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: backhaulbid
+      POSTGRES_PASSWORD: backhaulbid_secret
+      POSTGRES_DB: backhaulbid_identity
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backhaulbid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────
+  # MongoDB - Bidding Service Database
+  # ──────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: backhaulbid-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: backhaulbid
+      MONGO_INITDB_ROOT_PASSWORD: backhaulbid_secret
+      MONGO_INITDB_DATABASE: backhaulbid_bidding
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────
+  # Redis - Caching & Session
+  # ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: backhaulbid-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass backhaulbid_secret
+    volumes:
+      - redis_data:/data
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "backhaulbid_secret", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────
+  # RabbitMQ - Message Broker (Event-Driven)
+  # ──────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: backhaulbid-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: backhaulbid
+      RABBITMQ_DEFAULT_PASS: backhaulbid_secret
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────
+  # PLG Stack: Loki - Log Aggregation
+  # ──────────────────────────────────────────
+  # loki:
+  #   image: grafana/loki:2.9.4
+  #   container_name: backhaulbid-loki
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   volumes:
+  #     - ./loki/loki-config.yml:/etc/loki/local-config.yaml
+  #     - loki_data:/loki
+  #   networks:
+  #     - backhaulbid-network
+
+  # ──────────────────────────────────────────
+  # PLG Stack: Promtail - Log Collector
+  # ──────────────────────────────────────────
+  # promtail:
+  #   image: grafana/promtail:2.9.4
+  #   container_name: backhaulbid-promtail
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./promtail/promtail-config.yml:/etc/promtail/config.yml
+  #     - /var/log:/var/log:ro
+  #   command: -config.file=/etc/promtail/config.yml
+  #   depends_on:
+  #     - loki
+  #   networks:
+  #     - backhaulbid-network
+
+  # ──────────────────────────────────────────
+  # PLG Stack: Grafana - Monitoring Dashboard
+  # ──────────────────────────────────────────
+  # grafana:
+  #   image: grafana/grafana:10.3.1
+  #   container_name: backhaulbid-grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     GF_SECURITY_ADMIN_USER: admin
+  #     GF_SECURITY_ADMIN_PASSWORD: backhaulbid_secret
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/provisioning:/etc/grafana/provisioning
+  #   depends_on:
+  #     - loki
+  #   networks:
+  #     - backhaulbid-network
+
+  # ──────────────────────────────────────────
+  # Application Services & API Gateway
+  # ──────────────────────────────────────────
+
+  identity-service:
+    build:
+      context: ../backhaulbid-core-services
+      dockerfile: Dockerfile
+      args:
+        MODULE: identity-service
+    container_name: backhaulbid-identity-service
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_identity
+      - SPRING_DATASOURCE_USERNAME=backhaulbid
+      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+
+  fleet-service:
+    build:
+      context: ../backhaulbid-core-services
+      dockerfile: Dockerfile
+      args:
+        MODULE: fleet-service
+    container_name: backhaulbid-fleet-service
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_fleet
+      - SPRING_DATASOURCE_USERNAME=backhaulbid
+      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+
+  wallet-service:
+    build:
+      context: ../backhaulbid-core-services
+      dockerfile: Dockerfile
+      args:
+        MODULE: wallet-service
+    container_name: backhaulbid-wallet-service
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_wallet
+      - SPRING_DATASOURCE_USERNAME=backhaulbid
+      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+
+  contract-service:
+    build:
+      context: ../backhaulbid-core-services
+      dockerfile: Dockerfile
+      args:
+        MODULE: contract-service
+    container_name: backhaulbid-contract-service
+    restart: unless-stopped
+    ports:
+      - "8084:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_contract
+      - SPRING_DATASOURCE_USERNAME=backhaulbid
+      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+
+  bidding-service:
+    build:
+      context: ../backhaulbid-bidding-service
+      dockerfile: Dockerfile
+    container_name: backhaulbid-bidding-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGO_URI=mongodb://backhaulbid:backhaulbid_secret@mongodb:27017/backhaulbid_bidding?authSource=admin
+      - REDIS_URL=redis://:backhaulbid_secret@redis:6379
+      - RABBITMQ_URL=amqp://backhaulbid:backhaulbid_secret@rabbitmq:5672
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+
+  api-gateway:
+    build:
+      context: ../backhaulbid-core-services
+      dockerfile: Dockerfile
+      args:
+        MODULE: api-gateway
+    container_name: backhaulbid-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+    depends_on:
+      - identity-service
+      - fleet-service
+      - wallet-service
+      - contract-service
+      - bidding-service
+    networks:
+      - backhaulbid-network
+
+# ──────────────────────────────────────────
+# Volumes
+# ──────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  # loki_data:
+  #   driver: local
+  # grafana_data:
+  #   driver: local
+
+# ──────────────────────────────────────────
+# Networks
+# ──────────────────────────────────────────
+networks:
+  backhaulbid-network:
+    driver: bridge
+    name: backhaulbid-network
