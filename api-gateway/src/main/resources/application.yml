@@ -38,6 +38,11 @@ spring:
               - Path=/api/v1/bids/**, /bidding-socket/**
             filters:
               - AuthenticationFilter
+          # Catch-all: mọi request không khớp API sẽ được chuyển đến Web Portal
+          - id: web-portal
+            uri: http://web-portal:3000
+            predicates:
+              - Path=/**
 
 app:
   jwt:

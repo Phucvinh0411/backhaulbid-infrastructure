@@ -160,8 +160,7 @@ services:
         MODULE: identity-service
     container_name: backhaulbid-identity-service
     restart: unless-stopped
-    ports:
-      - "8081:8080"
+    # Không expose port ra ngoài - chỉ giao tiếp qua internal Docker network
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_identity
@@ -181,8 +180,6 @@ services:
         MODULE: fleet-service
     container_name: backhaulbid-fleet-service
     restart: unless-stopped
-    ports:
-      - "8082:8080"
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_fleet
@@ -202,8 +199,6 @@ services:
         MODULE: wallet-service
     container_name: backhaulbid-wallet-service
     restart: unless-stopped
-    ports:
-      - "8083:8080"
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_wallet
@@ -223,8 +218,6 @@ services:
         MODULE: contract-service
     container_name: backhaulbid-contract-service
     restart: unless-stopped
-    ports:
-      - "8084:8080"
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_contract
@@ -242,8 +235,6 @@ services:
       dockerfile: Dockerfile
     container_name: backhaulbid-bidding-service
     restart: unless-stopped
-    ports:
-      - "3001:3001"
     environment:
       - PORT=3001
       - MONGO_URI=mongodb://backhaulbid:backhaulbid_secret@mongodb:27017/backhaulbid_bidding?authSource=admin
@@ -275,6 +266,21 @@ services:
       - wallet-service
       - contract-service
       - bidding-service
+    networks:
+      - backhaulbid-network
+
+  web-portal:
+    build:
+      context: ../backhaulbid-web-portal
+      dockerfile: Dockerfile
+    container_name: backhaulbid-web-portal
+    restart: unless-stopped
+    # Không expose port - truy cập qua api-gateway:8080
+    environment:
+      - INTERNAL_GATEWAY_URL=http://api-gateway:8080
+      - NEXT_PUBLIC_GATEWAY_URL=http://localhost:8080
+    depends_on:
+      - api-gateway
     networks:
       - backhaulbid-network
 

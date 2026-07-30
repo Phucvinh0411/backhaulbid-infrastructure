@@ -4,7 +4,7 @@ import iuh.fit.se.apigateway.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
-import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
@@ -31,24 +31,20 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
             ServerHttpRequest request = exchange.getRequest();
 
             if (validator.isSecured.test(request)) {
-                if (!request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
+                // Lấy Token từ Cookie thay vì Header
+                HttpCookie authCookie = request.getCookies().getFirst("accessToken");
+                if (authCookie == null || authCookie.getValue().isEmpty()) {
                     exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
                     return exchange.getResponse().setComplete();
                 }
 
-                String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-                if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                    authHeader = authHeader.substring(7);
-                } else {
-                    exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-                    return exchange.getResponse().setComplete();
-                }
+                String token = authCookie.getValue();
 
                 try {
-                    jwtUtil.validateToken(authHeader);
+                    jwtUtil.validateToken(token);
 
-                    String userId = jwtUtil.getUserId(authHeader);
-                    String role = jwtUtil.getRole(authHeader);
+                    String userId = jwtUtil.getUserId(token);
+                    String role = jwtUtil.getRole(token);
 
                     request = request.mutate()
                             .header("X-User-Id", userId)
