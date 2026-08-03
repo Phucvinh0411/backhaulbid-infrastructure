@@ -274,6 +274,7 @@ services:
   api-gateway:
     build:
       context: ./api-gateway
+      dockerfile: Dockerfile
     container_name: backhaulbid-api-gateway
     restart: unless-stopped
     ports:
