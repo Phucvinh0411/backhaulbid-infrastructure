@@ -1,0 +1,135 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: identity-service-openapi
+          uri: lb://identity-service
+          predicates:
+            - Path=/v3/api-docs/identity-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: fleet-service-openapi
+          uri: lb://fleet-service
+          predicates:
+            - Path=/v3/api-docs/fleet-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: wallet-service-openapi
+          uri: lb://wallet-service
+          predicates:
+            - Path=/v3/api-docs/wallet-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: contract-service-openapi
+          uri: lb://contract-service
+          predicates:
+            - Path=/v3/api-docs/contract-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: notification-service-openapi
+          uri: lb://notification-service
+          predicates:
+            - Path=/v3/api-docs/notification-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: bidding-service-openapi
+          uri: http://bidding-service:3001
+          predicates:
+            - Path=/v3/api-docs/bidding-service
+          filters:
+            - SetPath=/swagger-json
+        - id: identity-service
+          uri: lb://identity-service
+          predicates:
+            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**
+        - id: fleet-service
+          uri: lb://fleet-service
+          predicates:
+            - Path=/api/v1/fleet/**,/api/v1/vehicles/**,/api/v1/drivers/**
+        - id: wallet-service
+          uri: lb://wallet-service
+          predicates:
+            - Path=/api/v1/wallet/**
+        - id: contract-service
+          uri: lb://contract-service
+          predicates:
+            - Path=/api/v1/contracts/**
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+        - id: bidding-service
+          uri: http://bidding-service:3001
+          predicates:
+            - Path=/api/v1/bidding/**
+          filters:
+            - StripPrefix=3
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - ${FRONTEND_ORIGIN:http://localhost:3000}
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - Authorization
+              - Content-Type
+              - Accept
+              - Origin
+            allowCredentials: true
+            maxAge: 3600
+
+eureka:
+  client:
+    registry-fetch-interval-seconds: 5
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    urls-primary-name: Identity Service
+    urls:
+      - name: Identity Service
+        url: /v3/api-docs/identity-service
+      - name: Fleet Service
+        url: /v3/api-docs/fleet-service
+      - name: Wallet Service
+        url: /v3/api-docs/wallet-service
+      - name: Contract Service
+        url: /v3/api-docs/contract-service
+      - name: Notification Service
+        url: /v3/api-docs/notification-service
+      - name: Bidding Service
+        url: /v3/api-docs/bidding-service

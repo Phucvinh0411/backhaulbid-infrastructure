@@ -1,0 +1,4 @@
+com\backhaulbid\gateway\security\JwtTokenServiceTest.class
+com\backhaulbid\gateway\GatewayDependencyCompatibilityTest.class
+com\backhaulbid\gateway\health\RouteServicesHealthIndicatorTest.class
+com\backhaulbid\gateway\security\JwtGlobalFilterTest.class

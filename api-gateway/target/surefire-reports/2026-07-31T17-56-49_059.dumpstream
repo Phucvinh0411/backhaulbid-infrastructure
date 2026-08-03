@@ -1,0 +1,5 @@
+# Created at 2026-07-31T17:56:49.730
+Boot Manifest-JAR contains absolute paths in classpath 'D:\KLTN\be\backhaulbid-infrastructure\api-gateway\target\test-classes'
+Hint: <argLine>-Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
+'other' has different root
+

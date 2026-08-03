@@ -1,0 +1,5 @@
+com\backhaulbid\gateway\security\JwtTokenService.class
+com\backhaulbid\gateway\health\RouteServicesHealthIndicator.class
+com\backhaulbid\gateway\security\JwtGlobalFilter.class
+com\backhaulbid\gateway\ApiGatewayApplication.class
+com\backhaulbid\gateway\security\AuthenticatedUser.class
