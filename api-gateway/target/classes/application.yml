@@ -46,7 +46,7 @@ spring:
         - id: identity-service
           uri: lb://identity-service
           predicates:
-            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/accounts/**,/api/v1/users/**
+            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**
         - id: fleet-service
           uri: lb://fleet-service
           predicates:
@@ -54,7 +54,7 @@ spring:
         - id: wallet-service
           uri: lb://wallet-service
           predicates:
-            - Path=/api/v1/wallet/**,/api/v1/wallets/**,/api/v1/transactions/**
+            - Path=/api/v1/wallet/**
         - id: contract-service
           uri: lb://contract-service
           predicates:
@@ -66,16 +66,9 @@ spring:
         - id: bidding-service
           uri: http://bidding-service:3001
           predicates:
-            - Path=/api/v1/bidding/**,/api/v1/bids/**
-        - id: bidding-socket
-          uri: http://bidding-service:3001
-          predicates:
-            - Path=/bidding-socket/**
-        # Catch-all: mọi request không khớp API sẽ được chuyển đến Web Portal
-        - id: web-portal
-          uri: http://web-portal:3000
-          predicates:
-            - Path=/**
+            - Path=/api/v1/bidding/**
+          filters:
+            - StripPrefix=3
       globalcors:
         add-to-simple-url-handler-mapping: true
         cors-configurations:
@@ -96,7 +89,6 @@ spring:
               - Origin
             allowCredentials: true
             maxAge: 3600
-
 
 eureka:
   client:

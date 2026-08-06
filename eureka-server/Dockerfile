@@ -11,8 +11,8 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 RUN addgroup -S spring && adduser -S spring -G spring
-COPY --from=build --chown=spring:spring /workspace/target/api-gateway-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build --chown=spring:spring /workspace/target/eureka-server-0.0.1-SNAPSHOT.jar app.jar
 
 USER spring:spring
-EXPOSE 8080
+EXPOSE 8761
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
