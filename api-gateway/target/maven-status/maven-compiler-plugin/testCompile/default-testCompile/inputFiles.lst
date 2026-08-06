@@ -1,0 +1,5 @@
+D:\KLTN\be\backhaulbid-infrastructure\api-gateway\src\test\java\com\backhaulbid\gateway\GatewayDependencyCompatibilityTest.java
+D:\KLTN\be\backhaulbid-infrastructure\api-gateway\src\test\java\com\backhaulbid\gateway\health\RouteServicesHealthIndicatorTest.java
+D:\KLTN\be\backhaulbid-infrastructure\api-gateway\src\test\java\com\backhaulbid\gateway\security\JwtGlobalFilterTest.java
+D:\KLTN\be\backhaulbid-infrastructure\api-gateway\src\test\java\com\backhaulbid\gateway\security\JwtTokenServiceTest.java
+D:\KLTN\be\backhaulbid-infrastructure\api-gateway\src\test\java\com\backhaulbid\gateway\SwaggerCatalogTest.java

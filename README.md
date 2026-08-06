@@ -1,94 +1,113 @@
-# 🛠️ BackHaulBid Infrastructure
+# BackHaulBid local stack
 
-> **Hạ Tầng Ứng Dụng Dùng Chung (Docker Compose, Databases, Event Broker, Cache & PLG Logging Stack)**
->
-> BackHaulBid Infrastructure là kho lưu trữ quản lý hạ tầng dùng chung cho toàn bộ nền tảng B2B BackHaulBid. Kho mã nguồn này chứa cấu hình Docker Compose để tự động dựng các cơ sở dữ liệu quan hệ và phi cấu trúc, hàng đợi thông điệp (Message Broker), bộ nhớ đệm (Cache) và giải pháp giám sát, tập hợp log tập trung PLG Stack.
+Docker Compose chạy toàn bộ backend BackHaulBid: data stores, service discovery,
+core services, API Gateway và bidding service. Web portal nằm sau profile tùy chọn.
 
----
+## Yêu cầu
 
-## 🛠️ Thành Phần Hạ Tầng (Middleware Stack)
-
-Khi kích hoạt Docker Compose, các thành phần sau sẽ được triển khai và cấu hình liên thông:
-
-*   **Database quan hệ**: ![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-4169E1?style=flat-square&logo=postgresql&logoColor=white) (Lưu trữ dữ liệu nghiệp vụ chính của core services).
-*   **Database tài liệu**: ![MongoDB](https://img.shields.io/badge/MongoDB_7.0-47A248?style=flat-square&logo=mongodb&logoColor=white) (Lưu trữ lịch sử và phiên đấu giá thời gian thực).
-*   **Event Broker**: ![RabbitMQ](https://img.shields.io/badge/RabbitMQ_3.13-FF6600?style=flat-square&logo=rabbitmq&logoColor=white) (Đảm nhận truyền tin nhắn bất đối xứng giữa các dịch vụ).
-*   **Cache & Lock**: ![Redis](https://img.shields.io/badge/Redis_7-DC382D?style=flat-square&logo=redis&logoColor=white) (Lưu trữ tạm thời trạng thái phòng đấu giá và khóa phân tán).
-*   **Logging Stack (PLG)**:
-    *   **Promtail**: Thu gom log từ console của các Docker containers.
-    *   **Loki**: Nhận log từ Promtail, lập chỉ mục và lưu trữ.
-    *   **Grafana**: Giao diện hiển thị biểu đồ đo đạc (Metrics) và truy vấn logs.
-
----
-
-## 📌 Yêu Cầu Môi Trường (Prerequisites)
-
-*   [Docker Desktop](https://www.docker.com/products/docker-desktop/) (hỗ trợ cả Windows, macOS, Linux).
-*   Công cụ CLI `docker` và `docker-compose` (hoặc cú pháp mới `docker compose`).
-*   Ít nhất 4GB RAM trống trên Docker VM để vận hành toàn bộ stack hạ tầng mượt mà.
-
----
-
-## 🚀 Kích Hoạt Hạ Tầng (Getting Started)
-
-1.  **Clone repository và di chuyển vào thư mục:**
-    ```bash
-    git clone https://github.com/backhaulbid/backhaulbid-infrastructure.git
-    cd backhaulbid-infrastructure
-    ```
-
-2.  **Khởi động toàn bộ môi trường hạ tầng (chạy ngầm):**
-    ```bash
-    docker compose up -d
-    # hoặc sử dụng cú pháp cũ:
-    docker-compose up -d
-    ```
-    *Lệnh này sẽ tải các Docker images cần thiết, tạo mạng nội bộ `backhaulbid-network` và khởi chạy tất cả các dịch vụ.*
-
-3.  **Kiểm tra trạng thái các container:**
-    ```bash
-    docker compose ps
-    ```
-
-4.  **Tắt và dọn dẹp môi trường hạ tầng:**
-    ```bash
-    docker compose down
-    # Nếu muốn xóa sạch toàn bộ ổ đĩa dữ liệu (Volumes):
-    docker compose down -v
-    ```
-
----
-
-## 📂 Cơ Cấu Thư Mục (Project Structure)
+- Docker Desktop với Docker Compose v2.
+- Các repository nằm cùng cấu trúc:
 
 ```text
-backhaulbid-infrastructure/
-├── grafana/
-│   └── provisioning/
-│       └── datasources/
-│           └── datasource.yml # Tự động thiết lập Loki làm nguồn dữ liệu trong Grafana
-├── init-scripts/
-│   └── postgres/
-│       └── 01-init-databases.sql # Script tự động tạo các DB phụ cho PostgreSQL
-├── loki/
-│   └── loki-config.yml        # Cấu hình lưu trữ log của Loki
-├── promtail/
-│   └── promtail-config.yml    # Định nghĩa cấu hình quét log container của Promtail
-├── docker-compose.yml         # File Docker Compose chính định nghĩa hạ tầng
-└── README.md
+KLTN/
+├── be/
+│   ├── backhaulbid-infrastructure/
+│   ├── backhaulbid-core-services/
+│   └── backhaulbid-bidding-service/
+└── fe/
+    └── backhaulbid-web-portal/
 ```
 
----
+## Khởi động
 
-## 🗺️ Bản Đồ Cổng Kết Nối Ngoài (Exposed Ports)
+Từ thư mục `KLTN/be`:
 
-Các dịch vụ hạ tầng sẽ mở các cổng trên host máy tính local của bạn như sau:
+```bash
+docker compose up --build -d
+docker compose ps
+```
 
-| Dịch vụ | Cổng Ngoài (Host Port) | Vai trò | Giao diện quản trị (Web UI) |
-| :--- | :--- | :--- | :--- |
-| **PostgreSQL** | `5432` | Kết nối Database lõi | pgAdmin/DBeaver |
-| **MongoDB** | `27017` | Kết nối Database đấu giá | MongoDB Compass |
-| **Redis** | `6379` | Kết nối Cache/Locks | RedisInsight |
-| **RabbitMQ** | `5672` | Broker kết nối ứng dụng | [http://localhost:15672](http://localhost:15672) (User: `backhaulbid` / Pass: `backhaulbid_secret`) |
-| **Grafana** | `3000` | Xem Logs hệ thống | [http://localhost:3000](http://localhost:3000) (User: `admin` / Pass: `backhaulbid_secret`) |
-| **Loki** | `3100` | Log Aggregator | Không có UI riêng (truy cập qua Grafana) |
+Lệnh mặc định không build hoặc khởi động frontend. Khi thật sự cần chạy cả web:
+
+```bash
+docker compose --profile frontend up --build -d
+```
+
+Compose chỉ hoàn tất dependency chain khi Eureka, core services và gateway đã
+qua healthcheck. Theo dõi log khi cần:
+
+```bash
+docker compose logs -f api-gateway identity-service web-portal
+```
+
+Dừng stack nhưng giữ dữ liệu:
+
+```bash
+docker compose down
+```
+
+`docker compose down -v` sẽ xóa toàn bộ dữ liệu PostgreSQL, MongoDB, Redis và
+RabbitMQ; chỉ dùng khi chủ động muốn reset môi trường.
+
+## Endpoint local
+
+| Thành phần | URL/port |
+| --- | --- |
+| Web portal | http://localhost:3000 |
+| API Gateway | http://localhost:8080 |
+| Identity service | http://localhost:8081 |
+| Fleet service | http://localhost:8082 |
+| Wallet service | http://localhost:8083 |
+| Contract service | http://localhost:8084 |
+| Eureka dashboard | http://localhost:8761 |
+| Bidding service | http://localhost:3001 |
+| PostgreSQL | localhost:5432 |
+| MongoDB | localhost:27017 |
+| Redis | localhost:6379 |
+| RabbitMQ | localhost:5672 |
+| RabbitMQ management | http://localhost:15672 |
+
+Browser chỉ gọi API Gateway. Gateway xác thực cookie `accessToken` hoặc Bearer
+token rồi tự tạo các header danh tính tin cậy cho downstream services.
+
+## Cấu hình
+
+Các giá trị sau có thể được đặt trong shell hoặc file `.env` cạnh
+`docker-compose.yml`:
+
+| Biến | Mục đích |
+| --- | --- |
+| `JWT_SECRET` | Khóa ký JWT dùng chung giữa identity service và gateway |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD` | Tài khoản PostgreSQL local |
+| `MONGO_USER`, `MONGO_PASSWORD` | Tài khoản MongoDB local |
+| `REDIS_PASSWORD` | Mật khẩu Redis local |
+| `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Tài khoản RabbitMQ local |
+
+Giá trị mặc định trong Compose chỉ dành cho phát triển local. Môi trường thật
+phải truyền secret riêng từ secret manager và bật HTTPS; không tái sử dụng các
+giá trị mặc định.
+
+## Tài khoản local
+
+`identity-service` tạo các tài khoản dưới đây bằng Flyway dev migration khi chạy
+bằng Compose. Migration chỉ thêm tài khoản còn thiếu nên database local đã có dữ
+liệu demo sẽ không bị ghi đè.
+
+| Vai trò | Số điện thoại | Mật khẩu mặc định |
+| --- | --- | --- |
+| Admin | `0900000001` | `Admin@123` |
+| Nhà xe | `0900000002` | `Carrier@123` |
+| Chủ hàng | `0900000003` | `Shipper@123` |
+
+## Kiến trúc
+
+- Eureka Server quản lý discovery cho bốn core services và API Gateway.
+- Gateway định tuyến bằng `lb://`, xác thực JWT và loại bỏ header danh tính do
+  client tự gửi.
+- Health của gateway chỉ `UP` khi đủ instance cho identity, fleet, wallet và
+  contract routes.
+- Web portal gọi gateway public qua `localhost:8080`; các Next server routes gọi
+  nội bộ qua `http://api-gateway:8080`.
+
+Quyết định về trust boundary được ghi tại
+[`docs/decisions/001-gateway-trusted-identity.md`](docs/decisions/001-gateway-trusted-identity.md).

@@ -1,14 +1,6 @@
-# ============================================
-# BackHaulBid Infrastructure Stack
-# docker-compose.yml
-# ============================================
-# Usage: docker compose up -d
+name: backhaulbid
 
 services:
-
-  # ──────────────────────────────────────────
-  # PostgreSQL - Core Services Database
-  # ──────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: backhaulbid-postgres
@@ -16,23 +8,20 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: backhaulbid
-      POSTGRES_PASSWORD: backhaulbid_secret
+      POSTGRES_USER: ${POSTGRES_USER:-backhaulbid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
       POSTGRES_DB: backhaulbid_identity
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d:ro
     networks:
       - backhaulbid-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U backhaulbid"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ──────────────────────────────────────────
-  # MongoDB - Bidding Service Database
-  # ──────────────────────────────────────────
   mongodb:
     image: mongo:7.0
     container_name: backhaulbid-mongodb
@@ -40,42 +29,36 @@ services:
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: backhaulbid
-      MONGO_INITDB_ROOT_PASSWORD: backhaulbid_secret
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-backhaulbid}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-backhaulbid_secret}
       MONGO_INITDB_DATABASE: backhaulbid_bidding
     volumes:
       - mongodb_data:/data/db
     networks:
       - backhaulbid-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ──────────────────────────────────────────
-  # Redis - Caching & Session
-  # ──────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: backhaulbid-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --requirepass backhaulbid_secret
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-backhaulbid_secret}"]
     volumes:
       - redis_data:/data
     networks:
       - backhaulbid-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "backhaulbid_secret", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:-backhaulbid_secret}\" ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ──────────────────────────────────────────
-  # RabbitMQ - Message Broker (Event-Driven)
-  # ──────────────────────────────────────────
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: backhaulbid-rabbitmq
@@ -84,8 +67,8 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: backhaulbid
-      RABBITMQ_DEFAULT_PASS: backhaulbid_secret
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-backhaulbid}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-backhaulbid_secret}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
@@ -94,152 +77,181 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ──────────────────────────────────────────
-  # PLG Stack: Loki - Log Aggregation
-  # ──────────────────────────────────────────
-  # loki:
-  #   image: grafana/loki:2.9.4
-  #   container_name: backhaulbid-loki
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3100:3100"
-  #   command: -config.file=/etc/loki/local-config.yaml
-  #   volumes:
-  #     - ./loki/loki-config.yml:/etc/loki/local-config.yaml
-  #     - loki_data:/loki
-  #   networks:
-  #     - backhaulbid-network
-
-  # ──────────────────────────────────────────
-  # PLG Stack: Promtail - Log Collector
-  # ──────────────────────────────────────────
-  # promtail:
-  #   image: grafana/promtail:2.9.4
-  #   container_name: backhaulbid-promtail
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ./promtail/promtail-config.yml:/etc/promtail/config.yml
-  #     - /var/log:/var/log:ro
-  #   command: -config.file=/etc/promtail/config.yml
-  #   depends_on:
-  #     - loki
-  #   networks:
-  #     - backhaulbid-network
-
-  # ──────────────────────────────────────────
-  # PLG Stack: Grafana - Monitoring Dashboard
-  # ──────────────────────────────────────────
-  # grafana:
-  #   image: grafana/grafana:10.3.1
-  #   container_name: backhaulbid-grafana
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     GF_SECURITY_ADMIN_USER: admin
-  #     GF_SECURITY_ADMIN_PASSWORD: backhaulbid_secret
-  #   volumes:
-  #     - grafana_data:/var/lib/grafana
-  #     - ./grafana/provisioning:/etc/grafana/provisioning
-  #   depends_on:
-  #     - loki
-  #   networks:
-  #     - backhaulbid-network
-
-  # ──────────────────────────────────────────
-  # Application Services & API Gateway
-  # ──────────────────────────────────────────
+  eureka-server:
+    build:
+      context: ./eureka-server
+    container_name: backhaulbid-eureka-server
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
 
   identity-service:
     build:
       context: ../backhaulbid-core-services
-      dockerfile: Dockerfile
       args:
         MODULE: identity-service
     container_name: backhaulbid-identity-service
     restart: unless-stopped
     # Không expose port ra ngoài - chỉ giao tiếp qua internal Docker network
     environment:
-      - SERVER_PORT=8080
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_identity
-      - SPRING_DATASOURCE_USERNAME=backhaulbid
-      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+      SERVER_PORT: 8080
+      DB_URL: jdbc:postgresql://postgres:5432/backhaulbid_identity
+      DB_USERNAME: ${POSTGRES_USER:-backhaulbid}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/dev-migration
+      BUSINESS_VERIFICATION_UPLOAD_DIR: /data/business-verifications
+      SWAGGER_ENABLED: "true"
+    volumes:
+      - business_verification_uploads:/data/business-verifications
     depends_on:
       postgres:
         condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   fleet-service:
     build:
       context: ../backhaulbid-core-services
-      dockerfile: Dockerfile
       args:
         MODULE: fleet-service
     container_name: backhaulbid-fleet-service
     restart: unless-stopped
     environment:
-      - SERVER_PORT=8080
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_fleet
-      - SPRING_DATASOURCE_USERNAME=backhaulbid
-      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/backhaulbid_fleet
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      SWAGGER_ENABLED: "true"
     depends_on:
       postgres:
         condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   wallet-service:
     build:
       context: ../backhaulbid-core-services
-      dockerfile: Dockerfile
       args:
         MODULE: wallet-service
     container_name: backhaulbid-wallet-service
     restart: unless-stopped
     environment:
-      - SERVER_PORT=8080
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_wallet
-      - SPRING_DATASOURCE_USERNAME=backhaulbid
-      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/backhaulbid_wallet
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      SWAGGER_ENABLED: "true"
     depends_on:
       postgres:
         condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   contract-service:
     build:
       context: ../backhaulbid-core-services
-      dockerfile: Dockerfile
       args:
         MODULE: contract-service
     container_name: backhaulbid-contract-service
     restart: unless-stopped
     environment:
-      - SERVER_PORT=8080
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/backhaulbid_contract
-      - SPRING_DATASOURCE_USERNAME=backhaulbid
-      - SPRING_DATASOURCE_PASSWORD=backhaulbid_secret
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/backhaulbid_contract
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      SWAGGER_ENABLED: "true"
     depends_on:
       postgres:
         condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  notification-service:
+    build:
+      context: ../backhaulbid-core-services
+      args:
+        MODULE: notification-service
+    container_name: backhaulbid-notification-service
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    environment:
+      SERVER_PORT: 8080
+      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_notification?authSource=admin
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      SWAGGER_ENABLED: "true"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   bidding-service:
     build:
       context: ../backhaulbid-bidding-service
-      dockerfile: Dockerfile
     container_name: backhaulbid-bidding-service
     restart: unless-stopped
     environment:
-      - PORT=3001
-      - MONGO_URI=mongodb://backhaulbid:backhaulbid_secret@mongodb:27017/backhaulbid_bidding?authSource=admin
-      - REDIS_URL=redis://:backhaulbid_secret@redis:6379
-      - RABBITMQ_URL=amqp://backhaulbid:backhaulbid_secret@rabbitmq:5672
+      PORT: 3001
+      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_bidding?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:-backhaulbid_secret}@redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:-backhaulbid_secret}@rabbitmq:5672
+      SWAGGER_ENABLED: "true"
     depends_on:
       mongodb:
         condition: service_healthy
@@ -259,15 +271,34 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SERVER_PORT=8080
+      SERVER_PORT: 8080
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      FRONTEND_ORIGIN: http://localhost:3000
+      JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      SWAGGER_ENABLED: "true"
     depends_on:
-      - identity-service
-      - fleet-service
-      - wallet-service
-      - contract-service
-      - bidding-service
+      eureka-server:
+        condition: service_healthy
+      identity-service:
+        condition: service_healthy
+      fleet-service:
+        condition: service_healthy
+      wallet-service:
+        condition: service_healthy
+      contract-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      bidding-service:
+        condition: service_started
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
 
   web-portal:
     build:
@@ -280,31 +311,28 @@ services:
       - INTERNAL_GATEWAY_URL=http://api-gateway:8080
       - NEXT_PUBLIC_GATEWAY_URL=http://localhost:8080
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
 
 # ──────────────────────────────────────────
 # Volumes
 # ──────────────────────────────────────────
 volumes:
   postgres_data:
-    driver: local
   mongodb_data:
-    driver: local
   redis_data:
-    driver: local
   rabbitmq_data:
-    driver: local
-  # loki_data:
-  #   driver: local
-  # grafana_data:
-  #   driver: local
+  business_verification_uploads:
 
-# ──────────────────────────────────────────
-# Networks
-# ──────────────────────────────────────────
 networks:
   backhaulbid-network:
-    driver: bridge
     name: backhaulbid-network
+    driver: bridge
