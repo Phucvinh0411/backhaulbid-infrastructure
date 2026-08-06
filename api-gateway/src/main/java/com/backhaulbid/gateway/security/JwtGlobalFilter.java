@@ -77,13 +77,18 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
 
     private boolean isPublicRequest(ServerHttpRequest request) {
         String path = request.getPath().value();
-        return request.getMethod() == HttpMethod.OPTIONS
-                || path.startsWith("/api/v1/auth/")
-                || path.startsWith("/swagger-ui")
-                || path.startsWith("/v3/api-docs")
-                || path.equals("/actuator/health")
-                || path.equals("/actuator/info")
-                || (!path.startsWith("/api/v1/") && !path.startsWith("/api/") && !path.startsWith("/bidding-socket/")); // Web portal paths are public
+        
+        // Các đường dẫn cho phép bypass Gateway JWT check
+        if (request.getMethod() == HttpMethod.OPTIONS) return true;
+        if (path.startsWith("/api/v1/auth/")) return true; // Login, Register, v.v. của Identity
+        if (path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")) return true;
+        if (path.equals("/actuator/health") || path.equals("/actuator/info")) return true;
+        
+        // Các API của backend CẦN bảo vệ
+        boolean isBackendSecuredApi = path.startsWith("/api/v1/") || path.startsWith("/bidding-socket/");
+        
+        // Nếu KHÔNG phải backend API (ví dụ: Next.js /api/auth/*, /, /login, /_next/*) thì coi như public để forward cho web-portal xử lý
+        return !isBackendSecuredApi;
     }
 
     private Optional<String> resolveAccessToken(ServerHttpRequest request) {
