@@ -213,33 +213,33 @@ services:
       retries: 15
       start_period: 30s
 
-  notification-service:
-    build:
-      context: ../backhaulbid-core-services
-      args:
-        MODULE: notification-service
-    container_name: backhaulbid-notification-service
-    restart: unless-stopped
-    ports:
-      - "8085:8080"
-    environment:
-      SERVER_PORT: 8080
-      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_notification?authSource=admin
-      EUREKA_URL: http://eureka-server:8761/eureka/
-      SWAGGER_ENABLED: "true"
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      eureka-server:
-        condition: service_healthy
-    networks:
-      - backhaulbid-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 30s
+#  notification-service:
+#    build:
+#      context: ../backhaulbid-core-services
+#      args:
+#        MODULE: notification-service
+#    container_name: backhaulbid-notification-service
+#    restart: unless-stopped
+#    ports:
+#      - "8085:8080"
+#    environment:
+#      SERVER_PORT: 8080
+#      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_notification?authSource=admin
+#      EUREKA_URL: http://eureka-server:8761/eureka/
+#      SWAGGER_ENABLED: "true"
+#    depends_on:
+#      mongodb:
+#        condition: service_healthy
+#      eureka-server:
+#        condition: service_healthy
+#    networks:
+#      - backhaulbid-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 15
+#      start_period: 30s
 
   bidding-service:
     build:
@@ -287,8 +287,8 @@ services:
         condition: service_healthy
       contract-service:
         condition: service_healthy
-      notification-service:
-        condition: service_healthy
+#      notification-service:
+#        condition: service_healthy
       bidding-service:
         condition: service_started
     networks:
