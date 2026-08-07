@@ -251,6 +251,10 @@ services:
       MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_bidding?authSource=admin
       REDIS_URL: redis://:${REDIS_PASSWORD:-backhaulbid_secret}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:-backhaulbid_secret}@rabbitmq:5672
+      WALLET_SERVICE_URL: http://wallet-service:8080
+      INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:-internal_secret_token}
+      OPENAPI_GATEWAY_SERVER_URL: http://localhost:8080
+      OPENAPI_DIRECT_SERVER_URL: http://localhost:3001
       SWAGGER_ENABLED: "true"
     depends_on:
       mongodb:
