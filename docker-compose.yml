@@ -6,11 +6,11 @@ services:
     container_name: backhaulbid-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-backhaulbid}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
-      POSTGRES_DB: backhaulbid_identity
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-backhaulbid_identity}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-scripts/postgres:/docker-entrypoint-initdb.d:ro
@@ -27,13 +27,15 @@ services:
     container_name: backhaulbid-mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "${MONGO_HOST_PORT:-27017}:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-backhaulbid}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-backhaulbid_secret}
-      MONGO_INITDB_DATABASE: backhaulbid_bidding
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+      MONGO_INITDB_DATABASE: ${MONGO_BIDDING_DATABASE:-backhaulbid_bidding}
     volumes:
       - mongodb_data:/data/db
+      # Load the shared bidding fixtures when MongoDB initializes a new volume.
+      - ../backhaulbid-demo-data/mongo/seed-bidding.js:/docker-entrypoint-initdb.d/01-seed-bidding.js:ro
     networks:
       - backhaulbid-network
     healthcheck:
@@ -47,14 +49,16 @@ services:
     container_name: backhaulbid-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-backhaulbid_secret}"]
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
       - redis_data:/data
     networks:
       - backhaulbid-network
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:-backhaulbid_secret}\" ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:?REDIS_PASSWORD is required}\" ping"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -64,11 +68,11 @@ services:
     container_name: backhaulbid-rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-backhaulbid}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-backhaulbid_secret}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
@@ -85,7 +89,7 @@ services:
     container_name: backhaulbid-eureka-server
     restart: unless-stopped
     ports:
-      - "8761:8761"
+      - "${EUREKA_HOST_PORT:-8761}:8761"
     networks:
       - backhaulbid-network
     healthcheck:
@@ -105,14 +109,14 @@ services:
     # Không expose port ra ngoài - chỉ giao tiếp qua internal Docker network
     environment:
       SERVER_PORT: 8080
-      DB_URL: jdbc:postgresql://postgres:5432/backhaulbid_identity
+      DB_URL: ${POSTGRES_IDENTITY_URL:-jdbc:postgresql://postgres:5432/backhaulbid_identity}
       DB_USERNAME: ${POSTGRES_USER:-backhaulbid}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
-      EUREKA_URL: http://eureka-server:8761/eureka/
-      JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/dev-migration
       BUSINESS_VERIFICATION_UPLOAD_DIR: /data/business-verifications
-      SWAGGER_ENABLED: "true"
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     volumes:
       - business_verification_uploads:/data/business-verifications
     depends_on:
@@ -138,11 +142,14 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/backhaulbid_fleet
+      SPRING_DATASOURCE_URL: ${POSTGRES_FLEET_URL:-jdbc:postgresql://postgres:5432/backhaulbid_fleet}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
-      EUREKA_URL: http://eureka-server:8761/eureka/
-      SWAGGER_ENABLED: "true"
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      FLEET_UPLOAD_DIR: /data/fleet-documents
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+    volumes:
+      - fleet_document_uploads:/data/fleet-documents
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,11 +173,20 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/backhaulbid_wallet
+      SPRING_DATASOURCE_URL: ${POSTGRES_WALLET_URL:-jdbc:postgresql://postgres:5432/backhaulbid_wallet}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
-      EUREKA_URL: http://eureka-server:8761/eureka/
-      SWAGGER_ENABLED: "true"
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      SEPAY_ENABLED: ${SEPAY_ENABLED:-false}
+      SEPAY_MERCHANT_ID: ${SEPAY_MERCHANT_ID:-}
+      SEPAY_SECRET_KEY: ${SEPAY_SECRET_KEY:-}
+      SEPAY_IPN_SECRET: ${SEPAY_IPN_SECRET:-}
+      SEPAY_CHECKOUT_URL: ${SEPAY_CHECKOUT_URL:-https://pay-sandbox.sepay.vn/v1/checkout/init}
+      SEPAY_SUCCESS_URL: ${SEPAY_SUCCESS_URL:-http://localhost:8080/carrier/wallet?payment=success}
+      SEPAY_ERROR_URL: ${SEPAY_ERROR_URL:-http://localhost:8080/carrier/wallet?payment=error}
+      SEPAY_CANCEL_URL: ${SEPAY_CANCEL_URL:-http://localhost:8080/carrier/wallet?payment=cancel}
     depends_on:
       postgres:
         condition: service_healthy
@@ -194,11 +210,11 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/backhaulbid_contract
+      SPRING_DATASOURCE_URL: ${POSTGRES_CONTRACT_URL:-jdbc:postgresql://postgres:5432/backhaulbid_contract}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-backhaulbid_secret}
-      EUREKA_URL: http://eureka-server:8761/eureka/
-      SWAGGER_ENABLED: "true"
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -224,7 +240,7 @@ services:
 #      - "8085:8080"
 #    environment:
 #      SERVER_PORT: 8080
-#      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_notification?authSource=admin
+#      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/backhaulbid_notification?authSource=admin
 #      EUREKA_URL: http://eureka-server:8761/eureka/
 #      SWAGGER_ENABLED: "true"
 #    depends_on:
@@ -248,14 +264,14 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3001
-      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:-backhaulbid_secret}@mongodb:27017/backhaulbid_bidding?authSource=admin
-      REDIS_URL: redis://:${REDIS_PASSWORD:-backhaulbid_secret}@redis:6379
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:-backhaulbid_secret}@rabbitmq:5672
-      WALLET_SERVICE_URL: http://wallet-service:8080
-      INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:-internal_secret_token}
-      OPENAPI_GATEWAY_SERVER_URL: http://localhost:8080
-      OPENAPI_DIRECT_SERVER_URL: http://localhost:3001
-      SWAGGER_ENABLED: "true"
+      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@${MONGO_HOST:-mongodb}:${MONGO_PORT:-27017}/${MONGO_BIDDING_DATABASE:-backhaulbid_bidding}?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}
+      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
+      INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      OPENAPI_GATEWAY_SERVER_URL: ${OPENAPI_GATEWAY_SERVER_URL:-http://localhost:8080}
+      OPENAPI_DIRECT_SERVER_URL: ${OPENAPI_DIRECT_SERVER_URL:-http://localhost:3001}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -273,13 +289,13 @@ services:
     container_name: backhaulbid-api-gateway
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${API_GATEWAY_HOST_PORT:-8080}:8080"
     environment:
       SERVER_PORT: 8080
-      EUREKA_URL: http://eureka-server:8761/eureka/
-      FRONTEND_ORIGIN: http://localhost:3000
-      JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
-      SWAGGER_ENABLED: "true"
+      EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       eureka-server:
         condition: service_healthy
@@ -306,14 +322,14 @@ services:
 
   web-portal:
     build:
-      context: ../backhaulbid-web-portal
+      context: ../../fe/backhaulbid-web-portal
       dockerfile: Dockerfile
     container_name: backhaulbid-web-portal
     restart: unless-stopped
     # Không expose port - truy cập qua api-gateway:8080
     environment:
-      - INTERNAL_GATEWAY_URL=http://api-gateway:8080
-      - NEXT_PUBLIC_GATEWAY_URL=http://localhost:8080
+      - INTERNAL_GATEWAY_URL=${INTERNAL_GATEWAY_URL:-http://api-gateway:8080}
+      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
     depends_on:
       api-gateway:
         condition: service_healthy
@@ -335,6 +351,7 @@ volumes:
   redis_data:
   rabbitmq_data:
   business_verification_uploads:
+  fleet_document_uploads:
 
 networks:
   backhaulbid-network:

@@ -83,6 +83,8 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         if (path.startsWith("/api/v1/auth/")) return true; // Login, Register, v.v. của Identity
         if (path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")) return true;
         if (path.equals("/actuator/health") || path.equals("/actuator/info")) return true;
+        // SePay authenticates this server-to-server callback with X-Secret-Key.
+        if (path.equals("/api/v1/payments/sepay/ipn")) return true;
         
         // Các API của backend CẦN bảo vệ
         boolean isBackendSecuredApi = path.startsWith("/api/v1/") || path.startsWith("/bidding-socket/");
