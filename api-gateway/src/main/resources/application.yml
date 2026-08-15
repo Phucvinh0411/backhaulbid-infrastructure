@@ -46,19 +46,19 @@ spring:
         - id: identity-service
           uri: lb://identity-service
           predicates:
-            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/accounts/**,/api/v1/users/**
+            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/accounts/**,/api/v1/users/**,/api/v1/admin/accounts/**,/api/v1/admin/settings/**
         - id: fleet-service
           uri: lb://fleet-service
           predicates:
-            - Path=/api/v1/fleet/**,/api/v1/vehicles/**,/api/v1/drivers/**
+            - Path=/api/v1/fleet/**,/api/v1/vehicles/**,/api/v1/drivers/**,/api/v1/admin/fleet/**
         - id: wallet-service
           uri: lb://wallet-service
           predicates:
-            - Path=/api/v1/wallet/**,/api/v1/wallets/**,/api/v1/transactions/**
+            - Path=/api/v1/wallet/**,/api/v1/wallets/**,/api/v1/transactions/**,/api/v1/payments/sepay/**,/api/v1/admin/wallet-withdrawals/**
         - id: contract-service
           uri: lb://contract-service
           predicates:
-            - Path=/api/v1/contracts/**
+            - Path=/api/v1/contracts/**,/api/v1/trips/**,/api/v1/complaints/**
         - id: notification-service
           uri: lb://notification-service
           predicates:
@@ -74,8 +74,13 @@ spring:
         # Catch-all: mọi request không khớp API sẽ được chuyển đến Web Portal
         - id: web-portal
           uri: http://web-portal:3000
+          # Keep local Gateway handlers (Swagger UI/static assets) ahead of the
+          # frontend route. An explicit allow-list is required because a
+          # catch-all route would also proxy Gateway-owned Swagger resources
+          # such as /webjars/swagger-ui/** to Next.js.
+          order: 100
           predicates:
-            - Path=/**
+            - Path=/,/login/**,/register/**,/forgot-password/**,/admin/**,/carrier/**,/shipper/**,/ekyc/**,/_next/**,/api/**,/file.svg,/globe.svg,/next.svg,/vercel.svg,/window.svg,/favicon.ico,/robots.txt,/sitemap.xml
       globalcors:
         add-to-simple-url-handler-mapping: true
         cors-configurations:
@@ -108,7 +113,7 @@ eureka:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    secret: ${JWT_SECRET}
 
 management:
   endpoints:
