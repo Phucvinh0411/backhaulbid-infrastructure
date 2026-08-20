@@ -16,6 +16,11 @@ services:
       - ./init-scripts/postgres:/docker-entrypoint-initdb.d:ro
     networks:
       - backhaulbid-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -38,11 +43,17 @@ services:
       - ../backhaulbid-demo-data/mongo/seed-bidding.js:/docker-entrypoint-initdb.d/01-seed-bidding.js:ro
     networks:
       - backhaulbid-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
@@ -57,6 +68,11 @@ services:
       - redis_data:/data
     networks:
       - backhaulbid-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:?REDIS_PASSWORD is required}\" ping"]
       interval: 10s
@@ -77,6 +93,11 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - backhaulbid-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -92,6 +113,13 @@ services:
       - "${EUREKA_HOST_PORT:-8761}:8761"
     networks:
       - backhaulbid-network
+    environment:
+      JAVA_OPTS: -Xms64m -Xmx192m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q '\"status\":\"UP\"'"]
       interval: 10s
@@ -107,7 +135,13 @@ services:
     container_name: backhaulbid-identity-service
     restart: unless-stopped
     # Không expose port ra ngoài - chỉ giao tiếp qua internal Docker network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
     environment:
+      JAVA_OPTS: -Xms64m -Xmx256m
       SERVER_PORT: 8080
       DB_URL: ${POSTGRES_IDENTITY_URL:-jdbc:postgresql://postgres:5432/backhaulbid_identity}
       DB_USERNAME: ${POSTGRES_USER:-backhaulbid}
@@ -140,7 +174,13 @@ services:
         MODULE: fleet-service
     container_name: backhaulbid-fleet-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
     environment:
+      JAVA_OPTS: -Xms64m -Xmx256m
       SERVER_PORT: 8080
       SPRING_DATASOURCE_URL: ${POSTGRES_FLEET_URL:-jdbc:postgresql://postgres:5432/backhaulbid_fleet}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
@@ -171,7 +211,13 @@ services:
         MODULE: wallet-service
     container_name: backhaulbid-wallet-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
     environment:
+      JAVA_OPTS: -Xms64m -Xmx256m
       SERVER_PORT: 8080
       SPRING_DATASOURCE_URL: ${POSTGRES_WALLET_URL:-jdbc:postgresql://postgres:5432/backhaulbid_wallet}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
@@ -208,7 +254,13 @@ services:
         MODULE: contract-service
     container_name: backhaulbid-contract-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
     environment:
+      JAVA_OPTS: -Xms64m -Xmx256m
       SERVER_PORT: 8080
       SPRING_DATASOURCE_URL: ${POSTGRES_CONTRACT_URL:-jdbc:postgresql://postgres:5432/backhaulbid_contract}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
@@ -262,6 +314,11 @@ services:
       context: ../backhaulbid-bidding-service
     container_name: backhaulbid-bidding-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
     environment:
       PORT: 3001
       MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@${MONGO_HOST:-mongodb}:${MONGO_PORT:-27017}/${MONGO_BIDDING_DATABASE:-backhaulbid_bidding}?authSource=admin
@@ -290,7 +347,13 @@ services:
     restart: unless-stopped
     ports:
       - "${API_GATEWAY_HOST_PORT:-8080}:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
     environment:
+      JAVA_OPTS: -Xms64m -Xmx256m
       SERVER_PORT: 8080
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
@@ -322,11 +385,16 @@ services:
 
   web-portal:
     build:
-      context: ../../fe/backhaulbid-web-portal
+      context: ../backhaulbid-web-portal
       dockerfile: Dockerfile
     container_name: backhaulbid-web-portal
     restart: unless-stopped
     # Không expose port - truy cập qua api-gateway:8080
+    deploy:
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 256M
     environment:
       - INTERNAL_GATEWAY_URL=${INTERNAL_GATEWAY_URL:-http://api-gateway:8080}
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
