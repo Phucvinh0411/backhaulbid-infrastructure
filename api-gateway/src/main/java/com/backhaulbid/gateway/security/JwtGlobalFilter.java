@@ -80,7 +80,13 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         
         // Các đường dẫn cho phép bypass Gateway JWT check
         if (request.getMethod() == HttpMethod.OPTIONS) return true;
-        if (path.startsWith("/api/v1/auth/")) return true; // Login, Register, v.v. của Identity
+        if (path.startsWith("/api/v1/auth/")) {
+            if (path.equals("/api/v1/auth/me") || path.equals("/api/v1/auth/logout")) {
+                // Must be authenticated
+            } else {
+                return true;
+            }
+        }
         if (path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")) return true;
         if (path.equals("/actuator/health") || path.equals("/actuator/info")) return true;
         // SePay authenticates this server-to-server callback with X-Secret-Key.

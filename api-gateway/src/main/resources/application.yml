@@ -50,7 +50,7 @@ spring:
         - id: fleet-service
           uri: lb://fleet-service
           predicates:
-            - Path=/api/v1/fleet/**,/api/v1/vehicles/**,/api/v1/drivers/**,/api/v1/admin/fleet/**
+            - Path=/api/v1/fleet/**,/api/v1/vehicles/**,/api/v1/drivers/**,/api/v1/admin/fleet/**,/api/v1/empty-routes/**
         - id: wallet-service
           uri: lb://wallet-service
           predicates:
@@ -60,9 +60,13 @@ spring:
           predicates:
             - Path=/api/v1/contracts/**,/api/v1/trips/**,/api/v1/complaints/**
         - id: notification-service
-          uri: lb://notification-service
+          uri: http://notification-service:3002
           predicates:
             - Path=/api/v1/notifications/**
+        - id: notification-socket
+          uri: http://notification-service:3002
+          predicates:
+            - Path=/notification-socket/**
         - id: bidding-service
           uri: http://bidding-service:3001
           predicates:
