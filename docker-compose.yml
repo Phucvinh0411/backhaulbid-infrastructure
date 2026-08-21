@@ -311,7 +311,9 @@ services:
 
   bidding-service:
     build:
-      context: ../backhaulbid-bidding-service
+      context: ../backhaulbid-node-services
+      args:
+        APP: bidding
     container_name: backhaulbid-bidding-service
     restart: unless-stopped
     deploy:
@@ -409,6 +411,27 @@ services:
       timeout: 5s
       retries: 15
       start_period: 20s
+
+  notification-service:
+    build:
+      context: ../backhaulbid-node-services
+      args:
+        APP: notification
+    container_name: backhaulbid-notification-service
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 192M
+    environment:
+      NOTIFICATION_PORT: 3002
+      MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/backhaulbid_notification?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
 
 # ──────────────────────────────────────────
 # Volumes
