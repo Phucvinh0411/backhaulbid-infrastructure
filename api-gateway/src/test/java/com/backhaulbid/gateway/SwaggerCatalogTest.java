@@ -32,7 +32,7 @@ class SwaggerCatalogTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.urls.length()").isEqualTo(6)
+                .jsonPath("$.urls.length()").isEqualTo(7)
                 .consumeWith(response -> assertThat(new String(response.getResponseBody(), StandardCharsets.UTF_8))
                         .contains(
                                 "\"name\":\"Identity Service\"",
@@ -43,6 +43,8 @@ class SwaggerCatalogTest {
                                 "\"url\":\"/v3/api-docs/wallet-service\"",
                                 "\"name\":\"Contract Service\"",
                                 "\"url\":\"/v3/api-docs/contract-service\"",
+                                "\"name\":\"Media Service\"",
+                                "\"url\":\"/v3/api-docs/media-service\"",
                                 "\"name\":\"Notification Service\"",
                                 "\"url\":\"/v3/api-docs/notification-service\"",
                                 "\"name\":\"Bidding Service\"",

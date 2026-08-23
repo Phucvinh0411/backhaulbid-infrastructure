@@ -72,8 +72,10 @@ token rồi tự tạo các header danh tính tin cậy cho downstream services.
 
 ## Cấu hình
 
-Các giá trị sau có thể được đặt trong shell hoặc file `.env` cạnh
-`docker-compose.yml`:
+Toàn bộ cấu hình local của hệ thống được đặt trong **một file duy nhất** là
+`be/backhaulbid-infrastructure/.env`, nằm cạnh `docker-compose.yml`. Compose
+đọc trực tiếp file này rồi truyền cấu hình cần thiết cho các service; không tạo
+hoặc copy thêm `.env` ở frontend để chạy cùng môi trường.
 
 | Biến | Mục đích |
 | --- | --- |
@@ -82,6 +84,19 @@ Các giá trị sau có thể được đặt trong shell hoặc file `.env` c�
 | `MONGO_USER`, `MONGO_PASSWORD` | Tài khoản MongoDB local |
 | `REDIS_PASSWORD` | Mật khẩu Redis local |
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Tài khoản RabbitMQ local |
+| `NEXT_PUBLIC_GATEWAY_URL` | Gateway public được web portal sử dụng |
+| `NEXT_PUBLIC_BIDDING_SOCKET_PATH` | Đường dẫn websocket bidding |
+| `NEXT_PUBLIC_VNPT_EKYC_BACKEND_URL` | Endpoint VNPT eKYC |
+| `NEXT_PUBLIC_VNPT_EKYC_TOKEN_KEY` | Token key VNPT eKYC |
+| `NEXT_PUBLIC_VNPT_EKYC_TOKEN_ID` | Token ID VNPT eKYC |
+| `NEXT_PUBLIC_VNPT_EKYC_AUTH` | Access token VNPT eKYC |
+
+Đây là **nguồn cấu hình duy nhất** cho web portal và là nguồn mặc định của
+môi trường Compose. Không tạo hoặc duy trì các biến `NEXT_PUBLIC_*` tương ứng
+trong `fe/backhaulbid-web-portal/.env`. Chạy FE độc lập bằng `npm run dev`/
+`npm run build`; script sẽ nạp trực tiếp file infrastructure này. Các file
+`.env`/`.env.example` còn nằm trong service Node chỉ phục vụ tương thích khi
+chạy service riêng lẻ, không được dùng để cấu hình Compose hoặc FE.
 
 Giá trị mặc định trong Compose chỉ dành cho phát triển local. Môi trường thật
 phải truyền secret riêng từ secret manager và bật HTTPS; không tái sử dụng các

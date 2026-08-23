@@ -101,8 +101,9 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 10
+      timeout: 15s
+      retries: 20
+      start_period: 120s
 
   eureka-server:
     build:
@@ -149,10 +150,9 @@ services:
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/dev-migration
-      BUSINESS_VERIFICATION_UPLOAD_DIR: /data/business-verifications
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     volumes:
-      - business_verification_uploads:/data/business-verifications
+      - identity_documents:/data/business-verifications
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,10 +186,9 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
-      FLEET_UPLOAD_DIR: /data/fleet-documents
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     volumes:
-      - fleet_document_uploads:/data/fleet-documents
+      - fleet_documents:/data/fleet-documents
     depends_on:
       postgres:
         condition: service_healthy
@@ -228,11 +227,11 @@ services:
       SEPAY_ENABLED: ${SEPAY_ENABLED:-false}
       SEPAY_MERCHANT_ID: ${SEPAY_MERCHANT_ID:-}
       SEPAY_SECRET_KEY: ${SEPAY_SECRET_KEY:-}
-      SEPAY_IPN_SECRET: ${SEPAY_IPN_SECRET:-}
+      SEPAY_IPN_SECRET: ${SEPAY_IPN_SECRET:-${SEPAY_SECRET_KEY:-}}
       SEPAY_CHECKOUT_URL: ${SEPAY_CHECKOUT_URL:-https://pay-sandbox.sepay.vn/v1/checkout/init}
-      SEPAY_SUCCESS_URL: ${SEPAY_SUCCESS_URL:-http://localhost:8080/carrier/wallet?payment=success}
-      SEPAY_ERROR_URL: ${SEPAY_ERROR_URL:-http://localhost:8080/carrier/wallet?payment=error}
-      SEPAY_CANCEL_URL: ${SEPAY_CANCEL_URL:-http://localhost:8080/carrier/wallet?payment=cancel}
+      SEPAY_SUCCESS_URL: ${SEPAY_SUCCESS_URL:-http://localhost:3000/?payment=success}
+      SEPAY_ERROR_URL: ${SEPAY_ERROR_URL:-http://localhost:3000/?payment=error}
+      SEPAY_CANCEL_URL: ${SEPAY_CANCEL_URL:-http://localhost:3000/?payment=cancel}
     depends_on:
       postgres:
         condition: service_healthy
@@ -281,7 +280,7 @@ services:
       retries: 15
       start_period: 30s
 
-#  notification-service:
+#'  notification-service:
 #    build:
 #      context: ../backhaulbid-core-services
 #      args:
@@ -311,7 +310,7 @@ services:
 
   bidding-service:
     build:
-      context: ../backhaulbid-node-services
+      context: ../backhaulbid-bidding-service
       args:
         APP: bidding
     container_name: backhaulbid-bidding-service
@@ -372,7 +371,9 @@ services:
         condition: service_healthy
       contract-service:
         condition: service_healthy
-#      notification-service:
+      media-service:
+        condition: service_healthy
+#    '  notification-service:
 #        condition: service_healthy
       bidding-service:
         condition: service_started
@@ -387,8 +388,15 @@ services:
 
   web-portal:
     build:
-      context: ../backhaulbid-web-portal
+      context: ../../fe/backhaulbid-web-portal
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+        NEXT_PUBLIC_BIDDING_SOCKET_PATH: ${NEXT_PUBLIC_BIDDING_SOCKET_PATH:-/bidding-socket}
+        NEXT_PUBLIC_VNPT_EKYC_BACKEND_URL: ${NEXT_PUBLIC_VNPT_EKYC_BACKEND_URL:-}
+        NEXT_PUBLIC_VNPT_EKYC_TOKEN_KEY: ${NEXT_PUBLIC_VNPT_EKYC_TOKEN_KEY:-}
+        NEXT_PUBLIC_VNPT_EKYC_TOKEN_ID: ${NEXT_PUBLIC_VNPT_EKYC_TOKEN_ID:-}
+        NEXT_PUBLIC_VNPT_EKYC_AUTH: ${NEXT_PUBLIC_VNPT_EKYC_AUTH:-}
     container_name: backhaulbid-web-portal
     restart: unless-stopped
     # Không expose port - truy cập qua api-gateway:8080
@@ -397,6 +405,8 @@ services:
         limits:
           cpus: '0.30'
           memory: 256M
+    ports:
+      - "${WEB_PORTAL_HOST_PORT:-3000}:3000"
     environment:
       - INTERNAL_GATEWAY_URL=${INTERNAL_GATEWAY_URL:-http://api-gateway:8080}
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
@@ -414,7 +424,7 @@ services:
 
   notification-service:
     build:
-      context: ../backhaulbid-node-services
+      context: ../backhaulbid-bidding-service
       args:
         APP: notification
     container_name: backhaulbid-notification-service
@@ -433,18 +443,61 @@ services:
     networks:
       - backhaulbid-network
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: backhaulbid-ngrok
+    restart: unless-stopped
+    command: ["http", "--url=${NGROK_DOMAIN}", "api-gateway:8080"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?NGROK_AUTHTOKEN is required}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+
 # ──────────────────────────────────────────
 # Volumes
 # ──────────────────────────────────────────
+  media-service:
+    build:
+      context: ../backhaulbid-core-services
+      args:
+        MODULE: media-service
+    container_name: backhaulbid-media-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-mock-key}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-mock-secret}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-backhaulbid-media}
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
 volumes:
   postgres_data:
   mongodb_data:
   redis_data:
   rabbitmq_data:
-  business_verification_uploads:
-  fleet_document_uploads:
+  identity_documents:
+  fleet_documents:
 
 networks:
   backhaulbid-network:
     name: backhaulbid-network
     driver: bridge
+
+
+
+
