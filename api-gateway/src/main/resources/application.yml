@@ -25,6 +25,12 @@ spring:
             - Path=/v3/api-docs/wallet-service
           filters:
             - SetPath=/v3/api-docs
+        - id: media-service-openapi
+          uri: lb://media-service
+          predicates:
+            - Path=/v3/api-docs/media-service
+          filters:
+            - SetPath=/v3/api-docs
         - id: contract-service-openapi
           uri: lb://contract-service
           predicates:
@@ -46,7 +52,7 @@ spring:
         - id: identity-service
           uri: lb://identity-service
           predicates:
-            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/accounts/**,/api/v1/users/**,/api/v1/admin/accounts/**,/api/v1/admin/settings/**
+            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/accounts/**,/api/v1/users/**,/api/v1/addresses/**,/api/v1/admin/accounts/**,/api/v1/admin/settings/**
         - id: fleet-service
           uri: lb://fleet-service
           predicates:
@@ -54,7 +60,7 @@ spring:
         - id: wallet-service
           uri: lb://wallet-service
           predicates:
-            - Path=/api/v1/wallet/**,/api/v1/wallets/**,/api/v1/transactions/**,/api/v1/payments/sepay/**,/api/v1/admin/wallet-withdrawals/**
+            - Path=/api/v1/wallet/**,/api/v1/wallets/**,/api/v1/transactions/**,/api/v1/payments/sepay/**,/api/v1/admin/wallet-withdrawals/**,/api/v1/admin/sepay/**,/api/v1/admin/wallets/**
         - id: contract-service
           uri: lb://contract-service
           predicates:
@@ -67,6 +73,10 @@ spring:
           uri: http://notification-service:3002
           predicates:
             - Path=/notification-socket/**
+        - id: media-service
+          uri: lb://media-service
+          predicates:
+            - Path=/api/v1/media/**
         - id: bidding-service
           uri: http://bidding-service:3001
           predicates:
@@ -84,7 +94,7 @@ spring:
           # such as /webjars/swagger-ui/** to Next.js.
           order: 100
           predicates:
-            - Path=/,/login/**,/register/**,/forgot-password/**,/admin/**,/carrier/**,/shipper/**,/ekyc/**,/_next/**,/api/**,/file.svg,/globe.svg,/next.svg,/vercel.svg,/window.svg,/favicon.ico,/robots.txt,/sitemap.xml
+            - Path=/,/403/**,/login/**,/register/**,/forgot-password/**,/admin/**,/carrier/**,/shipper/**,/ekyc/**,/_next/**,/api/**,/file.svg,/globe.svg,/next.svg,/vercel.svg,/window.svg,/favicon.ico,/favicon.svg,/robots.txt,/sitemap.xml
       globalcors:
         add-to-simple-url-handler-mapping: true
         cors-configurations:
@@ -150,3 +160,5 @@ springdoc:
         url: /v3/api-docs/notification-service
       - name: Bidding Service
         url: /v3/api-docs/bidding-service
+      - name: Media Service
+        url: /v3/api-docs/media-service

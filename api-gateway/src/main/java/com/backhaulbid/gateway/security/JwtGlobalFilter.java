@@ -93,7 +93,9 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         if (path.equals("/api/v1/payments/sepay/ipn")) return true;
         
         // Các API của backend CẦN bảo vệ
-        boolean isBackendSecuredApi = path.startsWith("/api/v1/") || path.startsWith("/bidding-socket/");
+        boolean isBackendSecuredApi = path.startsWith("/api/v1/")
+                || path.startsWith("/bidding-socket/")
+                || path.startsWith("/notification-socket/");
         
         // Nếu KHÔNG phải backend API (ví dụ: Next.js /api/auth/*, /, /login, /_next/*) thì coi như public để forward cho web-portal xử lý
         return !isBackendSecuredApi;

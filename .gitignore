@@ -25,3 +25,14 @@ logs/
 
 # Temporary files
 tmp/
+
+# --- AI & Agent Artifacts ---
+.agents/
+.claude/
+.gitnexus/
+.impeccable/
+artifacts/
+AGENTS.md
+CLAUDE.md
+GEMINI*.md
+*REPORT*.md

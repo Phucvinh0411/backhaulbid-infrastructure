@@ -106,6 +106,45 @@ class JwtGlobalFilterTest {
     }
 
     @Test
+    void filter_notificationSocketWithoutToken_returns401() {
+        // Given
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/notification-socket/socket.io/").build());
+        AtomicReference<ServerWebExchange> forwardedExchange = new AtomicReference<>();
+
+        // When
+        Mono<Void> result = jwtGlobalFilter.filter(exchange, capturingChain(forwardedExchange));
+
+        // Then
+        StepVerifier.create(result).verifyComplete();
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(forwardedExchange.get()).isNull();
+        verifyNoInteractions(jwtTokenService);
+    }
+
+    @Test
+    void filter_notificationSocketWithValidToken_forwardsTrustedIdentityHeaders() {
+        // Given
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/notification-socket/socket.io/")
+                        .cookie(new HttpCookie("accessToken", "cookie-token"))
+                        .build());
+        when(jwtTokenService.parseAccessToken("cookie-token"))
+                .thenReturn(new AuthenticatedUser("notification-user", "SHIPPER"));
+        AtomicReference<ServerWebExchange> actualExchange = new AtomicReference<>();
+
+        // When
+        Mono<Void> result = jwtGlobalFilter.filter(exchange, capturingChain(actualExchange));
+
+        // Then
+        StepVerifier.create(result).verifyComplete();
+        assertThat(actualExchange.get().getRequest().getHeaders().getFirst("X-User-Id"))
+                .isEqualTo("notification-user");
+        assertThat(actualExchange.get().getRequest().getHeaders().getFirst("X-User-Role"))
+                .isEqualTo("SHIPPER");
+    }
+
+    @Test
     void filter_validAccessTokenCookie_forwardsTrustedIdentityHeaders() {
         // Given
         MockServerWebExchange exchange = MockServerWebExchange.from(
