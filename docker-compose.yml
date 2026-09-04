@@ -310,7 +310,7 @@ services:
 
   bidding-service:
     build:
-      context: ../backhaulbid-bidding-service
+      context: ../backhaulbid-node-services
       args:
         APP: bidding
     container_name: backhaulbid-bidding-service
@@ -388,7 +388,7 @@ services:
 
   web-portal:
     build:
-      context: ../../fe/backhaulbid-web-portal
+      context: ../backhaulbid-web-portal
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
@@ -424,7 +424,7 @@ services:
 
   notification-service:
     build:
-      context: ../backhaulbid-bidding-service
+      context: ../backhaulbid-node-services
       args:
         APP: notification
     container_name: backhaulbid-notification-service

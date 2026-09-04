@@ -88,13 +88,9 @@ spring:
         # Catch-all: mọi request không khớp API sẽ được chuyển đến Web Portal
         - id: web-portal
           uri: http://web-portal:3000
-          # Keep local Gateway handlers (Swagger UI/static assets) ahead of the
-          # frontend route. An explicit allow-list is required because a
-          # catch-all route would also proxy Gateway-owned Swagger resources
-          # such as /webjars/swagger-ui/** to Next.js.
-          order: 100
+          order: 1000
           predicates:
-            - Path=/,/403/**,/login/**,/register/**,/forgot-password/**,/admin/**,/carrier/**,/shipper/**,/ekyc/**,/_next/**,/api/**,/file.svg,/globe.svg,/next.svg,/vercel.svg,/window.svg,/favicon.ico,/favicon.svg,/robots.txt,/sitemap.xml
+            - Path=/**
       globalcors:
         add-to-simple-url-handler-mapping: true
         cors-configurations:
