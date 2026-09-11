@@ -1,0 +1,9 @@
+{
+  "truckId": "51C-888.88",
+  "companyId": "55555555-5555-5555-5555-555555555555",
+  "expectedEmptyTime": "2026-09-15T08:00:00",
+  "origin": "TP. Hồ Chí Minh",
+  "destination": "Hà Nội",
+  "latitude": 10.8231,
+  "longitude": 106.6297
+}
