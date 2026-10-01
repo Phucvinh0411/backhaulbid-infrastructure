@@ -115,18 +115,18 @@ services:
     networks:
       - backhaulbid-network
     environment:
-      JAVA_OPTS: -Xms64m -Xmx192m
+      JAVA_OPTS: -Xms128m -Xmx256m
     deploy:
       resources:
         limits:
-          cpus: '0.30'
-          memory: 256M
+          cpus: '0.50'
+          memory: 384M
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q '\"status\":\"UP\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 20s
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
 
   identity-service:
     build:
@@ -266,10 +266,17 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # RabbitMQ — dùng cho Milestone Check-in events
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USER:-backhaulbid}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
     depends_on:
       postgres:
         condition: service_healthy
       eureka-server:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - backhaulbid-network
