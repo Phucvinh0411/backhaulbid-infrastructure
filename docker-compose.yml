@@ -444,8 +444,11 @@ services:
     environment:
       NOTIFICATION_PORT: 3002
       MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/backhaulbid_notification?authSource=admin
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}
     depends_on:
       mongodb:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - backhaulbid-network
