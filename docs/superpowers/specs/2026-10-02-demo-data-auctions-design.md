@@ -17,6 +17,12 @@ explicit demo fixtures.
   contains a database.
 - The bidding service already has the auction, bid, and registration schemas
   needed for demo fixtures.
+- PostgreSQL already contains substantial demo data tied to the primary role
+  accounts: the admin review queues have cases to display; the primary shipper
+  has six trips and six contracts across several states; and the primary
+  carrier has six vehicles, six driver profiles, five trips, complaints, and
+  wallet transactions. Preserve and use these records instead of reseeding or
+  resetting PostgreSQL.
 - Driver profiles exist under fleet data and can be managed by a carrier. The
   repository has no active standalone driver portal/login flow, so this change
   will not claim to implement or seed a DRIVER role.
@@ -54,6 +60,22 @@ Reference existing shipper and carrier accounts, verified vehicles, and the
 current Mongo schemas. Do not create identity accounts or change SQL business
 data as part of this seed.
 
+### Coverage by role
+
+- **ADMIN:** existing account list, business/fleet review cases, wallet summary,
+  and the pending/open auction monitor. The new fixtures supply actionable
+  pending and open auctions to the monitor.
+- **SHIPPER:** owned auction sessions and history, plus the existing trip,
+  contract, wallet, and complaint records tied to the demo shipper. Add auction
+  fixtures owned by this account so its auction pages are populated too.
+- **CARRIER:** existing vehicle/driver management, trips, wallet, and complaint
+  records, plus registration and bidding on the new public/sealed fixtures.
+
+For each role, the acceptance check is that its existing dashboard and
+data-bearing operational pages show the relevant linked records and supported
+states. Settings pages and the absent standalone driver experience are not
+expected to contain operational fixtures.
+
 ## User-visible result
 
 After running the command, the existing web portal should show an auction open
@@ -80,6 +102,8 @@ is explicitly outside this change.
 - A second run creates no duplicate fixtures and leaves non-demo records intact.
 - At least one registration window and one public plus one sealed auction are
   actionable at the time the seed runs.
+- ADMIN, SHIPPER, and CARRIER dashboards and their data-bearing pages each show
+  the existing role-owned demo records plus the new relevant auction records.
 - The listed terminal and registration scenarios are visible through the
   existing portal/API flows.
 - No new driver login, driver portal, or DRIVER role is implied by the seed.
