@@ -186,6 +186,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     volumes:
       - fleet_documents:/data/fleet-documents
@@ -265,6 +266,10 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002/api/v1/notifications}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       # RabbitMQ — dùng cho Milestone Check-in events
       RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
@@ -275,6 +280,12 @@ services:
       postgres:
         condition: service_healthy
       eureka-server:
+        condition: service_healthy
+      wallet-service:
+        condition: service_healthy
+      fleet-service:
+        condition: service_healthy
+      notification-service:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -334,6 +345,9 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}
       WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
       INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
+      CONTRACT_SERVICE_URL: ${CONTRACT_SERVICE_URL:-http://contract-service:8080}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
       OPENAPI_GATEWAY_SERVER_URL: ${OPENAPI_GATEWAY_SERVER_URL:-http://localhost:8080}
       OPENAPI_DIRECT_SERVER_URL: ${OPENAPI_DIRECT_SERVER_URL:-http://localhost:3001}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
@@ -343,6 +357,10 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      fleet-service:
+        condition: service_healthy
+      contract-service:
         condition: service_healthy
     networks:
       - backhaulbid-network
@@ -395,7 +413,7 @@ services:
 
   web-portal:
     build:
-      context: ../backhaulbid-web-portal
+      context: ../../fe/backhaulbid-web-portal
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
@@ -444,11 +462,21 @@ services:
     environment:
       NOTIFICATION_PORT: 3002
       MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/backhaulbid_notification?authSource=admin
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
     depends_on:
       mongodb:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/api/v1/notifications/health | grep -q 'UP'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
 
   ngrok:
     image: ngrok/ngrok:latest
