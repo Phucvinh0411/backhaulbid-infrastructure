@@ -151,6 +151,16 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/dev-migration
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      NFC_EKYC_ENABLED: ${NFC_EKYC_ENABLED:-false}
+      EKYC_EVIDENCE_ENCRYPTION_KEY: ${EKYC_EVIDENCE_ENCRYPTION_KEY:-}
+      NFC_LOCAL_AUTOMATIC: ${NFC_LOCAL_AUTOMATIC:-DISABLED}
+      SPRING_PROFILES_ACTIVE: ${IDENTITY_SPRING_PROFILES_ACTIVE:-}
+      # Cargo-liability certificate review: identity reads the private file from media-service with the internal token.
+      MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
+      # V3.1 driver code sign-in: identity asks contract about assignments; replay key stays server-side.
+      CONTRACT_SERVICE_URL: ${CONTRACT_SERVICE_URL:-http://contract-service:8080}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
+      DRIVER_REPLAY_KEY: ${DRIVER_REPLAY_KEY:-}
     volumes:
       - identity_documents:/data/business-verifications
     depends_on:
@@ -186,7 +196,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     volumes:
       - fleet_documents:/data/fleet-documents
@@ -262,11 +272,14 @@ services:
     environment:
       JAVA_OPTS: -Xms64m -Xmx256m
       SERVER_PORT: 8080
+      ROUTING_BASE_URL: ${ROUTING_BASE_URL:-}
       SPRING_DATASOURCE_URL: ${POSTGRES_CONTRACT_URL:-jdbc:postgresql://postgres:5432/backhaulbid_contract}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-backhaulbid}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
+      # Private claim evidence is read through media-service's token-protected internal endpoint only.
+      MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
       WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
       FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002/api/v1/notifications}
@@ -345,9 +358,12 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}
       WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
       INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
-      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
       CONTRACT_SERVICE_URL: ${CONTRACT_SERVICE_URL:-http://contract-service:8080}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
+      # Bids on coverage-required auctions ask identity whether the carrier's cargo-liability certificate is verified.
+      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
       OPENAPI_GATEWAY_SERVER_URL: ${OPENAPI_GATEWAY_SERVER_URL:-http://localhost:8080}
       OPENAPI_DIRECT_SERVER_URL: ${OPENAPI_DIRECT_SERVER_URL:-http://localhost:3001}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
@@ -383,6 +399,9 @@ services:
       SERVER_PORT: 8080
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      FRONTEND_LAN_ORIGIN: ${FRONTEND_LAN_ORIGIN:-http://192.168.1.25:3000}
+      EXPO_WEB_ORIGIN: ${EXPO_WEB_ORIGIN:-http://localhost:3002}
+      EXPO_LAN_ORIGIN: ${EXPO_LAN_ORIGIN:-http://192.168.1.25:3002}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
@@ -413,15 +432,11 @@ services:
 
   web-portal:
     build:
-      context: ../backhaulbid-web-portal
+      context: ../../fe/backhaulbid-web-portal
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
         NEXT_PUBLIC_BIDDING_SOCKET_PATH: ${NEXT_PUBLIC_BIDDING_SOCKET_PATH:-/bidding-socket}
-        NEXT_PUBLIC_VNPT_EKYC_BACKEND_URL: ${NEXT_PUBLIC_VNPT_EKYC_BACKEND_URL:-}
-        NEXT_PUBLIC_VNPT_EKYC_TOKEN_KEY: ${NEXT_PUBLIC_VNPT_EKYC_TOKEN_KEY:-}
-        NEXT_PUBLIC_VNPT_EKYC_TOKEN_ID: ${NEXT_PUBLIC_VNPT_EKYC_TOKEN_ID:-}
-        NEXT_PUBLIC_VNPT_EKYC_AUTH: ${NEXT_PUBLIC_VNPT_EKYC_AUTH:-}
     container_name: backhaulbid-web-portal
     restart: unless-stopped
     # Không expose port - truy cập qua api-gateway:8080
@@ -461,9 +476,9 @@ services:
           memory: 192M
     environment:
       NOTIFICATION_PORT: 3002
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
       MONGO_URI: mongodb://${MONGO_USER:-backhaulbid}:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/backhaulbid_notification?authSource=admin
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-backhaulbid}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -508,6 +523,9 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-mock-secret}
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-backhaulbid-media}
+      # V3.1: driver-session uploads/reads are checked against contract.
+      CONTRACT_SERVICE_URL: ${CONTRACT_SERVICE_URL:-http://contract-service:8080}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
     depends_on:
       eureka-server:
         condition: service_healthy
