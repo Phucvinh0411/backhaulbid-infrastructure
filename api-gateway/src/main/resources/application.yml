@@ -52,7 +52,7 @@ spring:
         - id: identity-service
           uri: lb://identity-service
           predicates:
-            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/accounts/**,/api/v1/users/**,/api/v1/addresses/**,/api/v1/admin/accounts/**,/api/v1/admin/settings/**
+            - Path=/api/v1/auth/**,/api/v1/representative-verifications/**,/api/v1/business-verifications/**,/api/v1/cargo-liability/**,/api/v1/accounts/**,/api/v1/users/**,/api/v1/addresses/**,/api/v1/admin/accounts/**,/api/v1/admin/settings/**,/api/v1/admin/representative-verifications/**
         - id: fleet-service
           uri: lb://fleet-service
           predicates:
@@ -64,7 +64,7 @@ spring:
         - id: contract-service
           uri: lb://contract-service
           predicates:
-            - Path=/api/v1/contracts/**,/api/v1/trips/**,/api/v1/complaints/**
+            - Path=/api/v1/contracts/**,/api/v1/trips/**,/api/v1/complaints/**,/api/v1/carrier-reviews/**,/api/v1/claims/**
         - id: notification-service
           uri: http://notification-service:3002
           predicates:
@@ -97,6 +97,9 @@ spring:
           '[/**]':
             allowedOrigins:
               - ${FRONTEND_ORIGIN:http://localhost:3000}
+              - ${FRONTEND_LAN_ORIGIN:http://192.168.1.25:3000}
+              - ${EXPO_WEB_ORIGIN:http://localhost:3002}
+              - ${EXPO_LAN_ORIGIN:http://192.168.1.25:3002}
             allowedMethods:
               - GET
               - POST
@@ -109,6 +112,8 @@ spring:
               - Content-Type
               - Accept
               - Origin
+              # Auction creation sends an idempotency key so a retried request cannot create twice.
+              - X-Idempotency-Key
             allowCredentials: true
             maxAge: 3600
 
