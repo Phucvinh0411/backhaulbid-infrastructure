@@ -280,6 +280,9 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
       # Private claim evidence is read through media-service's token-protected internal endpoint only.
       MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
+      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002/api/v1/notifications}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       # RabbitMQ — dùng cho Milestone Check-in events
       RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
@@ -290,6 +293,12 @@ services:
       postgres:
         condition: service_healthy
       eureka-server:
+        condition: service_healthy
+      wallet-service:
+        condition: service_healthy
+      fleet-service:
+        condition: service_healthy
+      notification-service:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -364,6 +373,10 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      fleet-service:
+        condition: service_healthy
+      contract-service:
         condition: service_healthy
     networks:
       - backhaulbid-network
@@ -473,6 +486,12 @@ services:
         condition: service_healthy
     networks:
       - backhaulbid-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/api/v1/notifications/health | grep -q 'UP'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
 
   ngrok:
     image: ngrok/ngrok:latest
