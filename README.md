@@ -48,9 +48,9 @@ Follow service logs with:
 docker compose logs -f api-gateway identity-service bidding-service web-portal
 ```
 
-## NFC eKYC in local development
+## NFC eKYC
 
-Identity-service has NFC eKYC disabled by default. Enable it only in the local environment and configure the evidence encryption key before submitting evidence. `NFC_LOCAL_AUTOMATIC` defaults to `DISABLED`; the `COMPLETED_ONLY` and `CAPTURE_COMPLETE` modes require the Spring `local` profile and are development acceptance rules, not independent official identity verification. See the NFC eKYC section in the core-services README.
+Identity-service has NFC eKYC disabled by default. Set `NFC_EKYC_ENABLED=true` and configure `EKYC_EVIDENCE_ENCRYPTION_KEY` (a 256-bit base64 key) before submitting evidence. `EKYC_AUTO_ACCEPT` defaults to `COMPLETED_ONLY` in this compose file: a submission whose device checks all pass is accepted without admin review and recorded with method `NFC_AUTO`. Set `EKYC_AUTO_ACCEPT=DISABLED` to send every submission to the admin queue. Auto-acceptance does not verify the chip's CSCA chain or check the face and liveness on the server. See the NFC eKYC section in the core-services README.
 
 ## Stop the stack
 

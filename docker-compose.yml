@@ -153,7 +153,9 @@ services:
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       NFC_EKYC_ENABLED: ${NFC_EKYC_ENABLED:-false}
       EKYC_EVIDENCE_ENCRYPTION_KEY: ${EKYC_EVIDENCE_ENCRYPTION_KEY:-}
-      NFC_LOCAL_AUTOMATIC: ${NFC_LOCAL_AUTOMATIC:-DISABLED}
+      BUSINESS_LOOKUP_CLIENT_ID: ${BUSINESS_LOOKUP_CLIENT_ID:-}
+      BUSINESS_LOOKUP_API_KEY: ${BUSINESS_LOOKUP_API_KEY:-}
+      EKYC_AUTO_ACCEPT: ${EKYC_AUTO_ACCEPT:-COMPLETED_ONLY}
       SPRING_PROFILES_ACTIVE: ${IDENTITY_SPRING_PROFILES_ACTIVE:-}
       # Cargo-liability certificate review: identity reads the private file from media-service with the internal token.
       MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
@@ -362,6 +364,8 @@ services:
       FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
       # Bids on coverage-required auctions ask identity whether the carrier's cargo-liability certificate is verified.
       IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      # Owner-only reads of goods-value documents go through media-service's token-protected internal route.
+      MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
       OPENAPI_GATEWAY_SERVER_URL: ${OPENAPI_GATEWAY_SERVER_URL:-http://localhost:8080}
