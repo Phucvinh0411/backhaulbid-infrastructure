@@ -109,8 +109,8 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
 
         // Các API của backend CẦN bảo vệ
         boolean isBackendSecuredApi = path.startsWith("/api/v1/")
-                || path.startsWith("/bidding-socket/")
-                || path.startsWith("/notification-socket/");
+                || path.startsWith("/bidding-socket")
+                || path.startsWith("/notification-socket");
 
         // Nếu KHÔNG phải backend API (ví dụ: Next.js /api/auth/*, /, /login, /_next/*) thì coi như public để forward cho web-portal xử lý
         return !isBackendSecuredApi;
@@ -132,6 +132,15 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         HttpCookie cookie = request.getCookies().getFirst(ACCESS_TOKEN_COOKIE);
         if (cookie != null && StringUtils.hasText(cookie.getValue())) {
             return Optional.of(cookie.getValue());
+        }
+
+        String tokenParam = request.getQueryParams().getFirst("token");
+        if (StringUtils.hasText(tokenParam)) {
+            return Optional.of(tokenParam);
+        }
+        String accessTokenParam = request.getQueryParams().getFirst("accessToken");
+        if (StringUtils.hasText(accessTokenParam)) {
+            return Optional.of(accessTokenParam);
         }
 
         return Optional.empty();
