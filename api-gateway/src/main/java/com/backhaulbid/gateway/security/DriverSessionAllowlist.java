@@ -33,8 +33,6 @@ final class DriverSessionAllowlist {
             rule(HttpMethod.POST, TRIP + "/journey-events"),
             rule(HttpMethod.GET, TRIP + "/delivery-proofs"),
             rule(HttpMethod.POST, TRIP + "/delivery-proofs"),
-            rule(HttpMethod.GET, TRIP + "/milestones"),
-            rule(HttpMethod.POST, TRIP + "/milestones/" + UUID + "/checkin"),
             rule(HttpMethod.GET, TRIP + "/handover"),
             rule(HttpMethod.PUT, TRIP + "/handover"),
             rule(HttpMethod.GET, TRIP + "/handover/photos/[0-9]{1,2}"),

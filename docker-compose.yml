@@ -286,7 +286,7 @@ services:
       FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002/api/v1/notifications}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
-      # RabbitMQ — dùng cho Milestone Check-in events
+      # RabbitMQ — dùng cho Realtime Trip Location events
       RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_USERNAME: ${RABBITMQ_USER:-backhaulbid}
