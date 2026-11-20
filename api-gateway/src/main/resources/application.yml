@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 500ms
   cloud:
     gateway:
       # The gateway sets CORS itself (globalcors below). Socket.IO services also add their own
@@ -136,6 +142,9 @@ app:
     secret: ${JWT_SECRET}
 
 management:
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:

@@ -98,9 +98,9 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         // Các đường dẫn cho phép bypass Gateway JWT check
         if (request.getMethod() == HttpMethod.OPTIONS) return true;
         if (path.startsWith("/api/v1/auth/")) {
-            // Driver redeem/refresh authenticate with the code or refresh secret inside identity.
-            return !(path.equals("/api/v1/auth/me") || path.equals("/api/v1/auth/logout")
-                    || path.equals("/api/v1/auth/driver/logout"));
+            // Driver redeem/refresh authenticate with the code or refresh secret inside identity;
+            // /api/v1/auth/logout clears HttpOnly cookies even when accessToken is missing or expired.
+            return !(path.equals("/api/v1/auth/me") || path.equals("/api/v1/auth/driver/logout"));
         }
         if (path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")) return true;
         if (path.equals("/actuator/health") || path.equals("/actuator/info")) return true;

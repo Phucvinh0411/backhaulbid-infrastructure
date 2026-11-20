@@ -163,6 +163,7 @@ services:
       CONTRACT_SERVICE_URL: ${CONTRACT_SERVICE_URL:-http://contract-service:8080}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
       DRIVER_REPLAY_KEY: ${DRIVER_REPLAY_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     volumes:
       - identity_documents:/data/business-verifications
     depends_on:
@@ -236,6 +237,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
       INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
+      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       SEPAY_ENABLED: ${SEPAY_ENABLED:-false}
       SEPAY_MERCHANT_ID: ${SEPAY_MERCHANT_ID:-}
@@ -284,8 +287,19 @@ services:
       MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
       WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}
       FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-service:8080}
-      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002/api/v1/notifications}
+      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:3002}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # Email OTP ký hợp đồng (Brevo SMTP hoặc Mailpit local)
+      CONTRACT_OTP_MAIL_ENABLED: ${CONTRACT_OTP_MAIL_ENABLED:-true}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@backhaulbid.vn}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-BackhaulBid}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
       # RabbitMQ — dùng cho Realtime Trip Location events
       RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
@@ -408,7 +422,12 @@ services:
       EXPO_LAN_ORIGIN: ${EXPO_LAN_ORIGIN:-http://192.168.1.25:3002}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     depends_on:
+      redis:
+        condition: service_healthy
       eureka-server:
         condition: service_healthy
       identity-service:
@@ -441,6 +460,7 @@ services:
       args:
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
         NEXT_PUBLIC_BIDDING_SOCKET_PATH: ${NEXT_PUBLIC_BIDDING_SOCKET_PATH:-/bidding-socket}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-${GOOGLE_CLIENT_ID:-}}
     container_name: backhaulbid-web-portal
     restart: unless-stopped
     # Không expose port - truy cập qua api-gateway:8080
@@ -454,6 +474,8 @@ services:
     environment:
       - INTERNAL_GATEWAY_URL=${INTERNAL_GATEWAY_URL:-http://api-gateway:8080}
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}}
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-${GOOGLE_CLIENT_ID:-}}
     depends_on:
       api-gateway:
         condition: service_healthy
@@ -541,6 +563,17 @@ services:
       timeout: 5s
       retries: 15
       start_period: 30s
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: backhaulbid-mailpit
+    profiles:
+      - local-mail
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_UI_HOST_PORT:-8025}:8025"
+    networks:
+      - backhaulbid-network
 
 volumes:
   postgres_data:
