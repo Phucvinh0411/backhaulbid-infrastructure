@@ -1,0 +1,312 @@
+# ==============================================================================
+# NestJS Microservices:
+#   1. bidding-service      (port 3001, HTTP + Socket.IO /bidding-socket + RMQ)
+#   2. notification-service (port 3002, HTTP + Socket.IO /notification-socket + RMQ)
+# ==============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: bidding-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: bidding-service
+  ports:
+    - name: http
+      port: 3001
+      targetPort: 3001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bidding-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bidding-service
+  template:
+    metadata:
+      labels:
+        app: bidding-service
+    spec:
+      containers:
+        - name: bidding-service
+          image: backhaulbid/bidding-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+              name: http
+          env:
+            - name: PORT
+              value: "3001"
+            - name: MONGO_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_USER
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: MONGO_PASSWORD
+            - name: MONGO_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_HOST
+            - name: MONGO_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_PORT
+            - name: MONGO_BIDDING_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_BIDDING_DATABASE
+            - name: MONGO_URI
+              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@$(MONGO_HOST):$(MONGO_PORT)/$(MONGO_BIDDING_DATABASE)?authSource=admin"
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: REDIS_PORT
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: REDIS_PASSWORD
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
+            - name: RABBITMQ_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_HOST
+            - name: RABBITMQ_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_PORT
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@$(RABBITMQ_HOST):$(RABBITMQ_PORT)"
+            - name: WALLET_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: WALLET_SERVICE_URL
+            - name: CONTRACT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: CONTRACT_SERVICE_URL
+            - name: FLEET_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: FLEET_SERVICE_URL
+            - name: IDENTITY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_SERVICE_URL
+            - name: MEDIA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MEDIA_SERVICE_URL
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: NOTIFICATION_SERVICE_URL
+            - name: INTERNAL_WALLET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_WALLET_TOKEN
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: SWAGGER_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SWAGGER_ENABLED
+            - name: OPENAPI_GATEWAY_SERVER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: OPENAPI_GATEWAY_SERVER_URL
+            - name: OPENAPI_DIRECT_SERVER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: OPENAPI_DIRECT_SERVER_URL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 320Mi
+          startupProbe:
+            httpGet:
+              path: /api/v1/bidding
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /api/v1/bidding
+              port: 3001
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/bidding
+              port: 3001
+            periodSeconds: 20
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: backhaulbid/notification-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3002
+              name: http
+          env:
+            - name: NOTIFICATION_PORT
+              value: "3002"
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: MONGO_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_USER
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: MONGO_PASSWORD
+            - name: MONGO_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_HOST
+            - name: MONGO_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_PORT
+            - name: MONGO_NOTIFICATION_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MONGO_NOTIFICATION_DATABASE
+            - name: MONGO_URI
+              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@$(MONGO_HOST):$(MONGO_PORT)/$(MONGO_NOTIFICATION_DATABASE)?authSource=admin"
+            - name: RABBITMQ_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_HOST
+            - name: RABBITMQ_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_PORT
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@$(RABBITMQ_HOST):$(RABBITMQ_PORT)"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /api/v1/notifications/health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /api/v1/notifications/health
+              port: 3002
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/notifications/health
+              port: 3002
+            periodSeconds: 20
+            timeoutSeconds: 5

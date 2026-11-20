@@ -1,0 +1,777 @@
+# ==============================================================================
+# Core Spring Boot Microservices:
+#   1. identity-service
+#   2. fleet-service
+#   3. wallet-service
+#   4. contract-service
+#   5. media-service
+# ==============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: identity-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-service
+  template:
+    metadata:
+      labels:
+        app: identity-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: identity-service
+          image: backhaulbid/identity-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms64m -Xmx256m"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SERVER_SHUTDOWN
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SERVER_SHUTDOWN
+            - name: SPRING_JPA_SHOW_SQL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SPRING_JPA_SHOW_SQL
+            - name: DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_IDENTITY_URL
+            - name: DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: POSTGRES_PASSWORD
+            - name: EUREKA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: JWT_SECRET
+            - name: SPRING_FLYWAY_LOCATIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_FLYWAY_LOCATIONS
+            - name: SWAGGER_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SWAGGER_ENABLED
+            - name: NFC_EKYC_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: NFC_EKYC_ENABLED
+            - name: EKYC_AUTO_ACCEPT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EKYC_AUTO_ACCEPT
+            - name: EKYC_EVIDENCE_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: EKYC_EVIDENCE_ENCRYPTION_KEY
+            - name: BUSINESS_LOOKUP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: BUSINESS_LOOKUP_CLIENT_ID
+            - name: BUSINESS_LOOKUP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: BUSINESS_LOOKUP_API_KEY
+            - name: MEDIA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MEDIA_SERVICE_URL
+            - name: CONTRACT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: CONTRACT_SERVICE_URL
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: DRIVER_REPLAY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: DRIVER_REPLAY_KEY
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: GOOGLE_CLIENT_ID
+          resources:
+            requests:
+              cpu: 50m
+              memory: 224Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleet-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: fleet-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fleet-service
+  template:
+    metadata:
+      labels:
+        app: fleet-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: fleet-service
+          image: backhaulbid/fleet-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms64m -Xmx256m"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SERVER_SHUTDOWN
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SERVER_SHUTDOWN
+            - name: SPRING_JPA_SHOW_SQL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SPRING_JPA_SHOW_SQL
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_FLEET_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: POSTGRES_PASSWORD
+            - name: EUREKA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_URL
+            - name: IDENTITY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_SERVICE_URL
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: SWAGGER_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SWAGGER_ENABLED
+          resources:
+            requests:
+              cpu: 50m
+              memory: 224Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wallet-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: wallet-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wallet-service
+  template:
+    metadata:
+      labels:
+        app: wallet-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: wallet-service
+          image: backhaulbid/wallet-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms64m -Xmx256m"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SERVER_SHUTDOWN
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SERVER_SHUTDOWN
+            - name: SPRING_JPA_SHOW_SQL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SPRING_JPA_SHOW_SQL
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_WALLET_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: POSTGRES_PASSWORD
+            - name: EUREKA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_URL
+            - name: IDENTITY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_SERVICE_URL
+            - name: INTERNAL_WALLET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_WALLET_TOKEN
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: SWAGGER_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SWAGGER_ENABLED
+            - name: SEPAY_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SEPAY_ENABLED
+            - name: SEPAY_MERCHANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: SEPAY_MERCHANT_ID
+            - name: SEPAY_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: SEPAY_SECRET_KEY
+            - name: SEPAY_IPN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: SEPAY_IPN_SECRET
+            - name: SEPAY_CHECKOUT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SEPAY_CHECKOUT_URL
+            - name: SEPAY_SUCCESS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SEPAY_SUCCESS_URL
+            - name: SEPAY_ERROR_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SEPAY_ERROR_URL
+            - name: SEPAY_CANCEL_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SEPAY_CANCEL_URL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 224Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contract-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: contract-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contract-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contract-service
+  template:
+    metadata:
+      labels:
+        app: contract-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: contract-service
+          image: backhaulbid/contract-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms64m -Xmx256m"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SERVER_SHUTDOWN
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SERVER_SHUTDOWN
+            - name: SPRING_JPA_SHOW_SQL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SPRING_JPA_SHOW_SQL
+            - name: ROUTING_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: ROUTING_BASE_URL
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_CONTRACT_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: POSTGRES_PASSWORD
+            - name: EUREKA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_URL
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: MEDIA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MEDIA_SERVICE_URL
+            - name: WALLET_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: WALLET_SERVICE_URL
+            - name: FLEET_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: FLEET_SERVICE_URL
+            - name: IDENTITY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_SERVICE_URL
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: NOTIFICATION_SERVICE_URL
+            - name: SWAGGER_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SWAGGER_ENABLED
+            - name: CONTRACT_OTP_MAIL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: CONTRACT_OTP_MAIL_ENABLED
+            - name: MAIL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_HOST
+            - name: MAIL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_PORT
+            - name: MAIL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: MAIL_USERNAME
+            - name: MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: MAIL_PASSWORD
+            - name: MAIL_FROM
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_FROM
+            - name: MAIL_FROM_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_FROM_NAME
+            - name: MAIL_SMTP_AUTH
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_SMTP_AUTH
+            - name: MAIL_SMTP_STARTTLS
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_SMTP_STARTTLS
+            - name: RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_HOST
+            - name: RABBITMQ_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_PORT
+            - name: RABBITMQ_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: RABBITMQ_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 224Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-service
+  namespace: backhaulbid
+spec:
+  selector:
+    app: media-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-service
+  namespace: backhaulbid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media-service
+  template:
+    metadata:
+      labels:
+        app: media-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: media-service
+          image: backhaulbid/media-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms64m -Xmx192m"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SERVER_SHUTDOWN
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: SERVER_SHUTDOWN
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "health,info"
+            - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
+              value: "true"
+            - name: EUREKA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_URL
+            - name: CONTRACT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: CONTRACT_SERVICE_URL
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: AWS_REGION
+            - name: AWS_S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: AWS_S3_BUCKET
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 800m
+              memory: 448Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
