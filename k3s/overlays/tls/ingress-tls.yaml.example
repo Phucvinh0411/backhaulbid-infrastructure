@@ -5,16 +5,15 @@
 #   1. Cai cert-manager:
 #        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
 #        kubectl -n cert-manager rollout status deploy/cert-manager-webhook
-#   2. Copy file nay thanh 11-ingress-tls.yaml (da nam trong .gitignore),
+#   2. Copy kustomization.yaml.example -> kustomization.yaml va
+#      copy file nay -> ingress-tls.yaml (ca 2 da nam trong .gitignore),
 #      thay YOUR_EMAIL va YOUR_DOMAIN (vd: backhaulbid.yourdomain.com).
-#   3. Apply:
-#        kubectl apply -f k3s/11-ingress-tls.yaml
-#   4. Cap nhat .env.k3s:
+#   3. Cap nhat .env.k3s:
 #        PUBLIC_BASE_URL=https://YOUR_DOMAIN
 #        INGRESS_HOST=YOUR_DOMAIN
 #        COOKIE_SECURE=true
 #      Sau do build lai web-portal (de nhung NEXT_PUBLIC_GATEWAY_URL=https://YOUR_DOMAIN)
-#      va chay lai ./k3s/scripts/deploy.sh.
+#      va chay ./k3s/scripts/deploy.sh (tu dong dung overlay TLS).
 # ==============================================================================
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -60,10 +59,59 @@ spec:
     - host: YOUR_DOMAIN
       http:
         paths:
-          - path: /
+          - path: /api/v1
             pathType: Prefix
             backend:
               service:
                 name: api-gateway
                 port:
                   number: 8080
+          - path: /bidding-socket
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /notification-socket
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /v3/api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /swagger-ui.html
+            pathType: Exact
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /webjars
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-portal
+                port:
+                  number: 3000

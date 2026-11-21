@@ -1,0 +1,82 @@
+name: CI - Infrastructure & API Gateway
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+      - deploy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-gateway:
+    name: API Gateway (Java 21)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api-gateway
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          cache-dependency-path: api-gateway/pom.xml
+
+      - name: Run API Gateway tests
+        run: |
+          chmod +x mvnw
+          ./mvnw clean test -B --no-transfer-progress
+
+  validate-manifests-and-scripts:
+    name: Validate Scripts, Kustomize & Compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate shell scripts (syntax & LF line endings)
+        run: |
+          set -euo pipefail
+          for script in k3s/scripts/*.sh; do
+            bash -n "$script"
+            if grep -q $'\r' "$script"; then
+              echo "::error::${script} contains CRLF line endings; convert to LF for Linux/EC2."
+              exit 1
+            fi
+          done
+
+      - name: Validate Docker Compose configuration
+        env:
+          NGROK_AUTHTOKEN: ci-dummy-token
+          NGROK_DOMAIN: ""
+        run: docker compose --env-file .env.example config --quiet
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Validate K3s Kustomize overlays
+        run: |
+          set -euo pipefail
+          kubectl kustomize k3s/base >/dev/null
+          kubectl kustomize k3s/overlays/http >/dev/null
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+          cp -r k3s "$TMP_DIR/k3s"
+          cp "$TMP_DIR/k3s/overlays/tls/kustomization.yaml.example" "$TMP_DIR/k3s/overlays/tls/kustomization.yaml"
+          cp "$TMP_DIR/k3s/overlays/tls/ingress-tls.yaml.example" "$TMP_DIR/k3s/overlays/tls/ingress-tls.yaml"
+          kubectl kustomize "$TMP_DIR/k3s/overlays/tls" >/dev/null

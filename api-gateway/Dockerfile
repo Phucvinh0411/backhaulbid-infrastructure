@@ -10,7 +10,7 @@ RUN mvn -B --no-transfer-progress -Dmaven.wagon.http.retryHandler.count=5 packag
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-RUN addgroup -S spring && adduser -S spring -G spring
+RUN addgroup -g 1001 -S spring && adduser -u 1001 -S spring -G spring
 COPY --from=build --chown=spring:spring /workspace/target/api-gateway-0.0.1-SNAPSHOT.jar app.jar
 
 USER spring:spring

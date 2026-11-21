@@ -26,7 +26,13 @@ metadata:
   name: identity-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: identity-service
@@ -35,14 +41,31 @@ spec:
       labels:
         app: identity-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
       containers:
         - name: identity-service
           image: backhaulbid/identity-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8080
               name: http
@@ -76,11 +99,21 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: POSTGRES_PASSWORD
-            - name: EUREKA_URL
+            - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: EUREKA_URL
+                  key: DB_POOL_MAX_SIZE
+            - name: DB_POOL_MIN_IDLE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: DB_POOL_MIN_IDLE
+            - name: EUREKA_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_ENABLED
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -193,7 +226,13 @@ metadata:
   name: fleet-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: fleet-service
@@ -202,14 +241,31 @@ spec:
       labels:
         app: fleet-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
       containers:
         - name: fleet-service
           image: backhaulbid/fleet-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8080
               name: http
@@ -243,11 +299,21 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: POSTGRES_PASSWORD
-            - name: EUREKA_URL
+            - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: EUREKA_URL
+                  key: DB_POOL_LIGHT_MAX_SIZE
+            - name: DB_POOL_MIN_IDLE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: DB_POOL_MIN_IDLE
+            - name: EUREKA_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_ENABLED
             - name: IDENTITY_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
@@ -310,7 +376,13 @@ metadata:
   name: wallet-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: wallet-service
@@ -319,14 +391,31 @@ spec:
       labels:
         app: wallet-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
       containers:
         - name: wallet-service
           image: backhaulbid/wallet-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8080
               name: http
@@ -360,11 +449,21 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: POSTGRES_PASSWORD
-            - name: EUREKA_URL
+            - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: EUREKA_URL
+                  key: DB_POOL_LIGHT_MAX_SIZE
+            - name: DB_POOL_MIN_IDLE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: DB_POOL_MIN_IDLE
+            - name: EUREKA_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_ENABLED
             - name: IDENTITY_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
@@ -472,7 +571,13 @@ metadata:
   name: contract-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: contract-service
@@ -481,14 +586,31 @@ spec:
       labels:
         app: contract-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
       containers:
         - name: contract-service
           image: backhaulbid/contract-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8080
               name: http
@@ -527,11 +649,21 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: POSTGRES_PASSWORD
-            - name: EUREKA_URL
+            - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: EUREKA_URL
+                  key: DB_POOL_MAX_SIZE
+            - name: DB_POOL_MIN_IDLE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: DB_POOL_MIN_IDLE
+            - name: EUREKA_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: EUREKA_ENABLED
             - name: INTERNAL_SERVICE_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -632,6 +764,16 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_VHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_VHOST
+            - name: RABBITMQ_SSL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: RABBITMQ_SSL_ENABLED
           resources:
             requests:
               cpu: 50m
@@ -679,7 +821,13 @@ metadata:
   name: media-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: media-service
@@ -688,14 +836,31 @@ spec:
       labels:
         app: media-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
       containers:
         - name: media-service
           image: backhaulbid/media-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8080
               name: http
@@ -713,11 +878,11 @@ spec:
               value: "health,info"
             - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
               value: "true"
-            - name: EUREKA_URL
+            - name: EUREKA_ENABLED
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: EUREKA_URL
+                  key: EUREKA_ENABLED
             - name: CONTRACT_SERVICE_URL
               valueFrom:
                 configMapKeyRef:

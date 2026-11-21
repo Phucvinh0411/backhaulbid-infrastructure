@@ -9,6 +9,8 @@
 k3s/.env.k3s
 k3s/01-secret.yaml
 k3s/11-ingress-tls.yaml
+k3s/overlays/tls/ingress-tls.yaml
+k3s/overlays/tls/kustomization.yaml
 *.pem
 *.key
 

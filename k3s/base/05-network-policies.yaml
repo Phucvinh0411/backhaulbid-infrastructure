@@ -1,0 +1,51 @@
+# ==============================================================================
+# NetworkPolicies (Zero-Trust Noi bo Namespace)
+#   1. Cac backend microservices chi nhan ket noi tu ben trong namespace 'backhaulbid'
+#      (api-gateway, web-portal hoac sibling services), chan truy cap tu namespace khac.
+#   2. api-gateway va web-portal chi nhan Ingress tu 'kube-system' (Traefik) hoac noi bo.
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-internal-only
+  namespace: backhaulbid
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - identity-service
+          - fleet-service
+          - wallet-service
+          - contract-service
+          - media-service
+          - bidding-service
+          - notification-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-ingress-only
+  namespace: backhaulbid
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - api-gateway
+          - web-portal
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system

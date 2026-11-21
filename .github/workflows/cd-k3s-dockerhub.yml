@@ -1,0 +1,443 @@
+name: CD - Build & Deploy K3s (Docker Hub)
+
+on:
+  push:
+    branches:
+      - deploy
+  repository_dispatch:
+    types:
+      - deploy-services
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Service(s) to build/deploy ("all", "none", or comma-separated service names)'
+        required: true
+        default: 'all'
+        type: string
+      image_tag:
+        description: 'Docker image tag ("auto" -> short SHA; or e.g. v1.0.2)'
+        required: true
+        default: 'auto'
+        type: string
+      source_branch:
+        description: 'Branch to checkout across BackHaulBid repositories'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - main
+          - develop
+      deploy_to_ec2:
+        description: 'Deploy updated image(s) to EC2 K3s via SSH after push'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Validate & Plan Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.plan.outputs.image_tag }}
+      services_csv: ${{ steps.plan.outputs.services_csv }}
+      source_branch: ${{ steps.plan.outputs.source_branch }}
+      matrix_json: ${{ steps.plan.outputs.matrix_json }}
+      has_builds: ${{ steps.plan.outputs.has_builds }}
+      run_deploy: ${{ steps.plan.outputs.run_deploy }}
+    steps:
+      - name: Checkout infrastructure repo (target branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_branch || (github.event_name == 'repository_dispatch' && (github.event.client_payload.source_branch || 'deploy') || github.ref_name) }}
+
+      - name: Validate secrets, resolve changes & expand service matrix
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before || '' }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_SERVICES: ${{ inputs.services || '' }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag || 'auto' }}
+          INPUT_SOURCE_BRANCH: ${{ inputs.source_branch || '' }}
+          INPUT_DEPLOY_TO_EC2: ${{ inputs.deploy_to_ec2 }}
+          CLIENT_SERVICES: ${{ github.event.client_payload.services || '' }}
+          CLIENT_IMAGE_TAG: ${{ github.event.client_payload.image_tag || '' }}
+          CLIENT_SOURCE_BRANCH: ${{ github.event.client_payload.source_branch || '' }}
+          CLIENT_DEPLOY_TO_EC2: ${{ github.event.client_payload.deploy_to_ec2 }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_REGISTRY_VAR: ${{ vars.IMAGE_REGISTRY || '' }}
+          PUBLIC_BASE_URL_VAL: ${{ vars.PUBLIC_BASE_URL || secrets.PUBLIC_BASE_URL }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          catalog = {
+              "api-gateway": {
+                  "service": "api-gateway",
+                  "repo": "Phucvinh0411/backhaulbid-infrastructure",
+                  "context": "./api-gateway",
+                  "dockerfile": "./api-gateway/Dockerfile",
+                  "build_args": "",
+              },
+              "identity-service": {
+                  "service": "identity-service",
+                  "repo": "Phucvinh0411/backhaulbid-core-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "MODULE=identity-service",
+              },
+              "fleet-service": {
+                  "service": "fleet-service",
+                  "repo": "Phucvinh0411/backhaulbid-core-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "MODULE=fleet-service",
+              },
+              "wallet-service": {
+                  "service": "wallet-service",
+                  "repo": "Phucvinh0411/backhaulbid-core-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "MODULE=wallet-service",
+              },
+              "contract-service": {
+                  "service": "contract-service",
+                  "repo": "Phucvinh0411/backhaulbid-core-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "MODULE=contract-service",
+              },
+              "media-service": {
+                  "service": "media-service",
+                  "repo": "Phucvinh0411/backhaulbid-core-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "MODULE=media-service",
+              },
+              "bidding-service": {
+                  "service": "bidding-service",
+                  "repo": "Phucvinh0411/backhaulbid-node-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "APP=bidding\nPORT=3001",
+              },
+              "notification-service": {
+                  "service": "notification-service",
+                  "repo": "Phucvinh0411/backhaulbid-node-services",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "APP=notification\nPORT=3002",
+              },
+              "web-portal": {
+                  "service": "web-portal",
+                  "repo": "Phucvinh0411/backhaulbid-web-portal",
+                  "context": ".",
+                  "dockerfile": "./Dockerfile",
+                  "build_args": "",
+              },
+          }
+
+          def git_short_sha() -> str:
+            return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+
+          def changed_files(before_sha: str) -> list[str] | None:
+            if not before_sha or set(before_sha) == {"0"}:
+              return None
+            check = subprocess.run(
+                ["git", "cat-file", "-e", f"{before_sha}^{{commit}}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if check.returncode != 0:
+              return None
+            out = subprocess.check_output(
+                ["git", "diff", "--name-only", before_sha, "HEAD"],
+                text=True,
+            )
+            return [line.strip() for line in out.splitlines() if line.strip()]
+
+          event_name = os.environ["EVENT_NAME"]
+          if event_name == "workflow_dispatch":
+            raw_services = os.environ["INPUT_SERVICES"]
+            raw_tag = os.environ["INPUT_IMAGE_TAG"]
+            source_branch = os.environ["INPUT_SOURCE_BRANCH"] or "deploy"
+            deploy_ec2 = os.environ["INPUT_DEPLOY_TO_EC2"].lower() == "true"
+          elif event_name == "repository_dispatch":
+            raw_services = os.environ["CLIENT_SERVICES"]
+            raw_tag = os.environ["CLIENT_IMAGE_TAG"] or "auto"
+            source_branch = os.environ["CLIENT_SOURCE_BRANCH"] or "deploy"
+            raw_deploy = os.environ.get("CLIENT_DEPLOY_TO_EC2", "").strip().lower()
+            deploy_ec2 = raw_deploy != "false"
+          elif event_name == "push":
+            source_branch = os.environ["REF_NAME"] or "deploy"
+            raw_tag = git_short_sha()
+            files = changed_files(os.environ.get("EVENT_BEFORE", ""))
+            if files is None:
+              raw_services = "api-gateway"
+              deploy_ec2 = True
+            else:
+              has_gateway = any(f.startswith("api-gateway/") for f in files)
+              has_k3s = any(f.startswith("k3s/") for f in files)
+              if has_gateway:
+                raw_services = "api-gateway"
+                deploy_ec2 = True
+              elif has_k3s:
+                raw_services = "none"
+                deploy_ec2 = True
+              else:
+                raw_services = "skip"
+                deploy_ec2 = False
+          else:
+            print(f"::error::Unsupported trigger event: {event_name}", file=sys.stderr)
+            sys.exit(1)
+
+          if source_branch not in {"deploy", "main", "develop"}:
+            print(f"::error::Unsupported source_branch '{source_branch}'.", file=sys.stderr)
+            sys.exit(1)
+
+          raw_tag = raw_tag.strip()
+          image_tag = git_short_sha() if (not raw_tag or raw_tag == "auto") else raw_tag
+          if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", image_tag):
+            print(f"::error::Invalid Docker image_tag '{image_tag}'. Allowed: [A-Za-z0-9_.-].", file=sys.stderr)
+            sys.exit(1)
+
+          tokens = [t.strip() for t in raw_services.split(",") if t.strip()]
+          if not tokens:
+            print("::error::'services' cannot be empty.", file=sys.stderr)
+            sys.exit(1)
+
+          if len(tokens) == 1 and tokens[0] == "skip":
+            selected = []
+            services_csv = "skip"
+            run_deploy = False
+          elif len(tokens) == 1 and tokens[0] == "none":
+            selected = []
+            services_csv = "none"
+            run_deploy = deploy_ec2
+          elif len(tokens) == 1 and tokens[0] == "all":
+            selected = list(catalog.keys())
+            services_csv = "all"
+            run_deploy = deploy_ec2
+          else:
+            if "all" in tokens or "none" in tokens or "skip" in tokens:
+              print("::error::Do not combine 'all', 'none', or 'skip' with service names.", file=sys.stderr)
+              sys.exit(1)
+            selected = []
+            for tok in tokens:
+              if tok not in catalog:
+                print(
+                    f"::error::Unknown service '{tok}'. Valid options: all, none, {', '.join(catalog.keys())}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+              if tok not in selected:
+                selected.append(tok)
+            services_csv = ",".join(selected)
+            run_deploy = deploy_ec2
+
+          has_builds = len(selected) > 0
+          docker_user = os.environ.get("DOCKERHUB_USERNAME", "").strip()
+          docker_token = os.environ.get("DOCKERHUB_TOKEN", "").strip()
+          registry_var = os.environ.get("IMAGE_REGISTRY_VAR", "").strip()
+
+          if has_builds and (not docker_user or not docker_token):
+            print("::error::Missing required GitHub Secrets: DOCKERHUB_USERNAME and DOCKERHUB_TOKEN.", file=sys.stderr)
+            sys.exit(1)
+
+          if run_deploy and not (registry_var or docker_user):
+            print("::error::Missing IMAGE_REGISTRY (Variables) or DOCKERHUB_USERNAME (Secrets) for deploy.", file=sys.stderr)
+            sys.exit(1)
+
+          if "web-portal" in selected:
+            clean_url = os.environ.get("PUBLIC_BASE_URL_VAL", "").strip()
+            if not clean_url or "<EC2_PUBLIC_IP>" in clean_url or not (
+                clean_url.startswith("http://") or clean_url.startswith("https://")
+            ):
+              print(
+                  "::error::web-portal requires PUBLIC_BASE_URL (Variables or Secrets) starting with http:// or https://.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          if run_deploy:
+            if not os.environ.get("EC2_HOST", "").strip() or not os.environ.get("EC2_SSH_KEY", "").strip():
+              print("::error::deploy requires GitHub Secrets EC2_HOST and EC2_SSH_KEY.", file=sys.stderr)
+              sys.exit(1)
+
+          matrix = [catalog[svc] for svc in selected]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"image_tag={image_tag}\n")
+            fh.write(f"services_csv={services_csv}\n")
+            fh.write(f"source_branch={source_branch}\n")
+            fh.write(f"matrix_json={json.dumps(matrix, separators=(',', ':'))}\n")
+            fh.write(f"has_builds={'true' if has_builds else 'false'}\n")
+            fh.write(f"run_deploy={'true' if run_deploy else 'false'}\n")
+
+          print(
+              f"Planned event={event_name}, branch={source_branch}, tag={image_tag}, "
+              f"services={services_csv}, has_builds={has_builds}, run_deploy={run_deploy}"
+          )
+          PY
+
+  build-and-push:
+    name: Build (${{ matrix.target.service }})
+    needs: prepare
+    if: ${{ needs.prepare.outputs.has_builds == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.matrix_json) }}
+    steps:
+      - name: Checkout ${{ matrix.target.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.target.repo }}
+          ref: ${{ needs.prepare.outputs.source_branch }}
+
+      - name: Resolve image metadata and build args
+        id: meta
+        env:
+          SERVICE_NAME: ${{ matrix.target.service }}
+          BASE_BUILD_ARGS: ${{ matrix.target.build_args }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          IMAGE_REGISTRY_VAR: ${{ vars.IMAGE_REGISTRY }}
+          IMAGE_PREFIX_VAR: ${{ vars.IMAGE_PREFIX }}
+          PUBLIC_BASE_URL_VAL: ${{ vars.PUBLIC_BASE_URL || secrets.PUBLIC_BASE_URL }}
+          GOOGLE_CLIENT_ID_VAL: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '' }}
+        run: |
+          set -euo pipefail
+
+          REGISTRY="${IMAGE_REGISTRY_VAR:-$DOCKERHUB_USERNAME}"
+          PREFIX="${IMAGE_PREFIX_VAR:-backhaulbid-}"
+          if [[ "${PREFIX}" == "none" ]]; then
+            PREFIX=""
+          fi
+
+          IMAGE_REF="${REGISTRY}/${PREFIX}${SERVICE_NAME}:${IMAGE_TAG}"
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "build_args<<__EOF__"
+            if [[ "${SERVICE_NAME}" == "web-portal" ]]; then
+              GATEWAY_URL="${PUBLIC_BASE_URL_VAL%/}"
+              echo "NEXT_PUBLIC_GATEWAY_URL=${GATEWAY_URL}"
+              echo "NEXT_PUBLIC_BIDDING_SOCKET_PATH=/bidding-socket"
+              echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID_VAL}"
+            elif [[ -n "${BASE_BUILD_ARGS}" ]]; then
+              printf '%s\n' "${BASE_BUILD_ARGS}"
+            fi
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Target image tag: ${IMAGE_REF}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push (${{ matrix.target.service }})
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.target.context }}
+          file: ${{ matrix.target.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.image_ref }}
+          build-args: ${{ steps.meta.outputs.build_args }}
+          cache-from: type=gha,scope=${{ matrix.target.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target.service }}
+
+  deploy-k3s:
+    name: Deploy to EC2 K3s
+    needs: [prepare, build-and-push]
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped') && needs.prepare.outputs.run_deploy == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: k3s-ec2-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy selected services via SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER_SECRET: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_SSH_PORT_VAR: ${{ vars.EC2_SSH_PORT }}
+          EC2_PROJECT_DIR_VAR: ${{ vars.EC2_PROJECT_DIR }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          IMAGE_REGISTRY_VAR: ${{ vars.IMAGE_REGISTRY }}
+          IMAGE_PREFIX_VAR: ${{ vars.IMAGE_PREFIX }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+          SERVICES_ARG: ${{ needs.prepare.outputs.services_csv }}
+          SOURCE_BRANCH: ${{ needs.prepare.outputs.source_branch }}
+        run: |
+          set -euo pipefail
+
+          EC2_USER="${EC2_USER_SECRET:-ubuntu}"
+          EC2_PORT="${EC2_SSH_PORT_VAR:-22}"
+          PROJECT_DIR="${EC2_PROJECT_DIR_VAR:-~/backhaulbid/backhaulbid-infrastructure}"
+          REGISTRY="${IMAGE_REGISTRY_VAR:-$DOCKERHUB_USERNAME}"
+          PREFIX="${IMAGE_PREFIX_VAR:-backhaulbid-}"
+          if [[ "${PREFIX}" == "none" ]]; then
+            PREFIX=""
+          fi
+
+          install -m 700 -d ~/.ssh
+          (
+            umask 077
+            printf '%s\n' "${EC2_SSH_KEY}" > ~/.ssh/deploy_key
+          )
+          ssh-keyscan -p "${EC2_PORT}" -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+
+          trap 'rm -f ~/.ssh/deploy_key' EXIT
+
+          ssh -i ~/.ssh/deploy_key -p "${EC2_PORT}" -o BatchMode=yes "${EC2_USER}@${EC2_HOST}" \
+            bash -s -- "${PROJECT_DIR}" "${SOURCE_BRANCH}" "${REGISTRY}" "${PREFIX}" "${IMAGE_TAG}" "${SERVICES_ARG}" <<'REMOTE_EOF'
+          set -euo pipefail
+          PROJECT_DIR="$1"
+          SOURCE_BRANCH="$2"
+          REGISTRY="$3"
+          PREFIX="$4"
+          IMAGE_TAG="$5"
+          SERVICES_ARG="$6"
+
+          RESOLVED_DIR="${PROJECT_DIR/#\~/$HOME}"
+          if [[ ! -d "${RESOLVED_DIR}" ]]; then
+            echo "ERROR: Project directory not found on EC2: ${RESOLVED_DIR}" >&2
+            exit 1
+          fi
+
+          cd "${RESOLVED_DIR}"
+          if git status --porcelain | grep -q .; then
+            echo "WARNING: EC2 repo has uncommitted changes; skipping git pull and using current files." >&2
+          else
+            git fetch origin "${SOURCE_BRANCH}"
+            git checkout "${SOURCE_BRANCH}"
+            git pull --ff-only origin "${SOURCE_BRANCH}"
+          fi
+
+          chmod +x k3s/scripts/*.sh
+          IMAGE_REGISTRY="${REGISTRY}" \
+          IMAGE_PREFIX="${PREFIX}" \
+          ./k3s/scripts/deploy.sh --tag "${IMAGE_TAG}" --services "${SERVICES_ARG}"
+          REMOTE_EOF

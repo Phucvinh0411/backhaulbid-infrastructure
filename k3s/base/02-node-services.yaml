@@ -10,6 +10,10 @@ metadata:
   name: bidding-service
   namespace: backhaulbid
 spec:
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
   selector:
     app: bidding-service
   ports:
@@ -23,7 +27,13 @@ metadata:
   name: bidding-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: bidding-service
@@ -32,82 +42,52 @@ spec:
       labels:
         app: bidding-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
       containers:
         - name: bidding-service
           image: backhaulbid/bidding-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 3001
               name: http
           env:
             - name: PORT
               value: "3001"
-            - name: MONGO_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_USER
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backhaulbid-secrets
-                  key: MONGO_PASSWORD
-            - name: MONGO_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_HOST
-            - name: MONGO_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_PORT
-            - name: MONGO_BIDDING_DATABASE
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_BIDDING_DATABASE
             - name: MONGO_URI
-              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@$(MONGO_HOST):$(MONGO_PORT)/$(MONGO_BIDDING_DATABASE)?authSource=admin"
-            - name: REDIS_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: REDIS_HOST
-            - name: REDIS_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: REDIS_PORT
-            - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: REDIS_PASSWORD
+                  key: MONGO_BIDDING_URI
             - name: REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
-            - name: RABBITMQ_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: RABBITMQ_USER
-            - name: RABBITMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: RABBITMQ_PASSWORD
-            - name: RABBITMQ_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: RABBITMQ_HOST
-            - name: RABBITMQ_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: RABBITMQ_PORT
+                  key: REDIS_URL
             - name: RABBITMQ_URL
-              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@$(RABBITMQ_HOST):$(RABBITMQ_PORT)"
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: RABBITMQ_URL
             - name: WALLET_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
@@ -197,6 +177,10 @@ metadata:
   name: notification-service
   namespace: backhaulbid
 spec:
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
   selector:
     app: notification-service
   ports:
@@ -210,7 +194,13 @@ metadata:
   name: notification-service
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: notification-service
@@ -219,10 +209,31 @@ spec:
       labels:
         app: notification-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
       containers:
         - name: notification-service
           image: backhaulbid/notification-service:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 3002
               name: http
@@ -234,55 +245,21 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: INTERNAL_SERVICE_TOKEN
-            - name: MONGO_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_USER
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: backhaulbid-secrets
-                  key: MONGO_PASSWORD
-            - name: MONGO_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_HOST
-            - name: MONGO_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_PORT
-            - name: MONGO_NOTIFICATION_DATABASE
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: MONGO_NOTIFICATION_DATABASE
             - name: MONGO_URI
-              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@$(MONGO_HOST):$(MONGO_PORT)/$(MONGO_NOTIFICATION_DATABASE)?authSource=admin"
-            - name: RABBITMQ_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: RABBITMQ_USER
-            - name: RABBITMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: RABBITMQ_PASSWORD
-            - name: RABBITMQ_HOST
+                  key: MONGO_NOTIFICATION_URI
+            - name: REDIS_URL
               valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: RABBITMQ_HOST
-            - name: RABBITMQ_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: backhaulbid-config
-                  key: RABBITMQ_PORT
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: REDIS_URL
             - name: RABBITMQ_URL
-              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@$(RABBITMQ_HOST):$(RABBITMQ_PORT)"
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: RABBITMQ_URL
           resources:
             requests:
               cpu: 50m

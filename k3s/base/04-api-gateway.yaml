@@ -3,6 +3,11 @@ kind: Service
 metadata:
   name: api-gateway
   namespace: backhaulbid
+  annotations:
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: "backhaulbid_affinity"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.httponly: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.samesite: "lax"
 spec:
   selector:
     app: api-gateway
@@ -17,7 +22,13 @@ metadata:
   name: api-gateway
   namespace: backhaulbid
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: api-gateway
@@ -26,10 +37,31 @@ spec:
       labels:
         app: api-gateway
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
       containers:
         - name: api-gateway
           image: backhaulbid/api-gateway:v1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8080
               name: http
@@ -43,11 +75,51 @@ spec:
                 configMapKeyRef:
                   name: backhaulbid-config
                   key: SERVER_SHUTDOWN
-            - name: EUREKA_URL
+            - name: EUREKA_ENABLED
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: EUREKA_URL
+                  key: EUREKA_ENABLED
+            - name: IDENTITY_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_GATEWAY_URI
+            - name: FLEET_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: FLEET_GATEWAY_URI
+            - name: WALLET_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: WALLET_GATEWAY_URI
+            - name: CONTRACT_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: CONTRACT_GATEWAY_URI
+            - name: MEDIA_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MEDIA_GATEWAY_URI
+            - name: BIDDING_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: BIDDING_GATEWAY_URI
+            - name: NOTIFICATION_GATEWAY_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: NOTIFICATION_GATEWAY_URI
+            - name: WEB_PORTAL_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: WEB_PORTAL_URI
             - name: FRONTEND_ORIGIN
               valueFrom:
                 configMapKeyRef:
@@ -88,11 +160,21 @@ spec:
                 configMapKeyRef:
                   name: backhaulbid-config
                   key: REDIS_PORT
+            - name: REDIS_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: REDIS_USERNAME
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: REDIS_PASSWORD
+            - name: REDIS_SSL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: REDIS_SSL_ENABLED
           resources:
             requests:
               cpu: 50m
@@ -108,7 +190,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 36
-          # /actuator/health chi tra UP sau khi 4 core services da dang ky tren Eureka
+          # /actuator/health tra UP khi Gateway va Redis san sang (dinh tuyen qua K8s DNS, khong dung Eureka)
           readinessProbe:
             httpGet:
               path: /actuator/health

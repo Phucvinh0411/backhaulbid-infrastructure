@@ -1,24 +1,78 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# BackHaulBid - Deploy len K3s tu file k3s/.env.k3s
+# BackHaulBid - Deploy len K3s tu file k3s/.env.k3s (Stateless App-Only + External DB)
+#
+# Cach dung:
+#   ./k3s/scripts/deploy.sh
+#   ./k3s/scripts/deploy.sh --tag v1.0.2
+#   ./k3s/scripts/deploy.sh --tag v1.0.2 --services web-portal,api-gateway
+#   IMAGE_TAG=a1b2c3d ./k3s/scripts/deploy.sh
 #
 # Script nay thuc hien:
-#   1. Kiem tra tinh hop le cua k3s/.env.k3s (khong con placeholder CHANGE_ME)
-#   2. Tao/cap nhat Namespace, Secret (khong ghi secret ra file YAML), ConfigMap
-#   3. Tao Kustomize overlay tam thoi trong /tmp de ap dung IMAGE_REGISTRY/TAG
-#      va INGRESS_HOST (giu git working tree sach 100%)
-#   4. Trien khai theo dung thu tu:
-#        Stateful (Postgres, Mongo, Redis, RabbitMQ)
-#        -> Eureka Server
-#        -> Core + Node + Web Services
-#        -> API Gateway + Ingress (hoac 11-ingress-tls.yaml neu da cau hinh HTTPS)
+#   1. Kiem tra tinh hop le cua k3s/.env.k3s (bao gom URI CSDL ngoai: Aiven/Atlas/CloudAMQP)
+#   2. Tao/cap nhat Namespace, Secret (gom dockerhub-regcred, MONGO_*_URI, REDIS_URL, RABBITMQ_URL)
+#   3. Tach URI thanh tham so ket noi va cap nhat ConfigMap 'backhaulbid-config'
+#   4. Render Kustomize overlay tam thoi (overlays/http hoac overlays/tls) trong /tmp
+#   5. Trien khai & cho 9 Deployment stateless + Traefik Ingress san sang
 # ==============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K3S_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+INFRA_DIR="$(cd "$K3S_DIR/.." && pwd)"
 ENV_FILE="$K3S_DIR/.env.k3s"
 NAMESPACE="backhaulbid"
+
+# Giu lai bien truyen tu shell/CLI (uu tien cao hon .env.k3s)
+ENV_OVERRIDE_REGISTRY="${IMAGE_REGISTRY-}"
+HAS_OVERRIDE_PREFIX=false
+if [[ -n "${IMAGE_PREFIX+x}" ]]; then
+  HAS_OVERRIDE_PREFIX=true
+  ENV_OVERRIDE_PREFIX="$IMAGE_PREFIX"
+fi
+ENV_OVERRIDE_TAG="${IMAGE_TAG-}"
+ENV_OVERRIDE_PULL_POLICY="${IMAGE_PULL_POLICY-}"
+ENV_OVERRIDE_REPLICAS="${APP_REPLICAS-}"
+ENV_OVERRIDE_SERVICES="${DEPLOY_SERVICES-}"
+CLI_TAG=""
+CLI_SERVICES=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tag)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "ERROR: --tag can gia tri cu the." >&2
+        exit 1
+      fi
+      CLI_TAG="$2"
+      shift 2
+      ;;
+    --tag=*)
+      CLI_TAG="${1#*=}"
+      shift
+      ;;
+    --services)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "ERROR: --services can danh sach service hoac 'all'." >&2
+        exit 1
+      fi
+      CLI_SERVICES="$2"
+      shift 2
+      ;;
+    --services=*)
+      CLI_SERVICES="${1#*=}"
+      shift
+      ;;
+    -h|--help)
+      sed -n '2,18p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Tham so khong hop le: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: Khong tim thay $ENV_FILE" >&2
@@ -31,16 +85,103 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# Default gia tri khong bat buoc
+# Default gia tri & ap dung uu tien override
 PUBLIC_BASE_URL="${PUBLIC_BASE_URL%/}"
 INGRESS_HOST="${INGRESS_HOST:-}"
 COOKIE_SECURE="${COOKIE_SECURE:-false}"
-IMAGE_REGISTRY="${IMAGE_REGISTRY:-backhaulbid}"
-IMAGE_TAG="${IMAGE_TAG:-v1}"
 
-POSTGRES_USER="${POSTGRES_USER:-backhaulbid}"
-MONGO_USER="${MONGO_USER:-backhaulbid}"
-RABBITMQ_USER="${RABBITMQ_USER:-backhaulbid}"
+IMAGE_REGISTRY="${ENV_OVERRIDE_REGISTRY:-${IMAGE_REGISTRY:-backhaulbid}}"
+if [[ "$HAS_OVERRIDE_PREFIX" == "true" ]]; then
+  IMAGE_PREFIX="$ENV_OVERRIDE_PREFIX"
+else
+  IMAGE_PREFIX="${IMAGE_PREFIX:-}"
+fi
+IMAGE_TAG="${CLI_TAG:-${ENV_OVERRIDE_TAG:-${IMAGE_TAG:-auto}}}"
+IMAGE_PULL_POLICY="${ENV_OVERRIDE_PULL_POLICY:-${IMAGE_PULL_POLICY:-}}"
+APP_REPLICAS="${ENV_OVERRIDE_REPLICAS:-${APP_REPLICAS:-2}}"
+DB_POOL_MAX_SIZE="${DB_POOL_MAX_SIZE:-2}"
+DB_POOL_LIGHT_MAX_SIZE="${DB_POOL_LIGHT_MAX_SIZE:-1}"
+DB_POOL_MIN_IDLE="${DB_POOL_MIN_IDLE:-1}"
+DEPLOY_SERVICES="${CLI_SERVICES:-${ENV_OVERRIDE_SERVICES:-all}}"
+
+if [[ -z "$IMAGE_TAG" || "$IMAGE_TAG" == "auto" ]]; then
+  if git -C "$INFRA_DIR" rev-parse --short HEAD >/dev/null 2>&1; then
+    IMAGE_TAG="$(git -C "$INFRA_DIR" rev-parse --short HEAD)"
+  else
+    IMAGE_TAG="$(date +%Y%m%d%H%M%S)"
+  fi
+fi
+
+ALL_SERVICES=(identity-service fleet-service wallet-service contract-service media-service bidding-service notification-service web-portal api-gateway)
+PARTIAL_DEPLOY=false
+TARGET_SERVICES_CSV=""
+if [[ -n "$DEPLOY_SERVICES" && "$DEPLOY_SERVICES" != "all" ]]; then
+  PARTIAL_DEPLOY=true
+  if [[ "$DEPLOY_SERVICES" != "none" ]]; then
+    IFS=',' read -r -a RAW_SERVICES <<< "$DEPLOY_SERVICES"
+    for raw_svc in "${RAW_SERVICES[@]}"; do
+      svc="$(printf '%s' "$raw_svc" | tr -d '[:space:]')"
+      [[ -z "$svc" ]] && continue
+      valid=false
+      for known in "${ALL_SERVICES[@]}"; do
+        if [[ "$svc" == "$known" ]]; then
+          valid=true
+          break
+        fi
+      done
+      if [[ "$valid" != "true" ]]; then
+        echo "ERROR: Service khong hop le trong --services: '$svc'. Hop le: all, none, ${ALL_SERVICES[*]}" >&2
+        exit 1
+      fi
+      if [[ ",${TARGET_SERVICES_CSV}," != *",${svc},"* ]]; then
+        TARGET_SERVICES_CSV="${TARGET_SERVICES_CSV:+${TARGET_SERVICES_CSV},}${svc}"
+      fi
+    done
+    if [[ -z "$TARGET_SERVICES_CSV" ]]; then
+      echo "ERROR: Danh sach --services rong." >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [[ "$IMAGE_TAG" == "latest" ]]; then
+  echo "WARNING: Dang dung IMAGE_TAG=latest — khuyen nghi dung version tag co dinh (vd v1.0.0) hoac Git SHA de K3s roll out nhat quan." >&2
+fi
+
+if [[ -z "$IMAGE_PULL_POLICY" ]]; then
+  if [[ "$IMAGE_REGISTRY" != "backhaulbid" && ( "$IMAGE_TAG" == "latest" || "$IMAGE_TAG" == "dev" ) ]]; then
+    IMAGE_PULL_POLICY="Always"
+  else
+    IMAGE_PULL_POLICY="IfNotPresent"
+  fi
+fi
+
+DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-}"
+DOCKERHUB_TOKEN="${DOCKERHUB_TOKEN:-}"
+DOCKERHUB_SERVER="${DOCKERHUB_SERVER:-https://index.docker.io/v1/}"
+IMAGE_PULL_SECRET_NAME="${IMAGE_PULL_SECRET_NAME:-dockerhub-regcred}"
+
+POSTGRES_HOST="${POSTGRES_HOST:-}"
+POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+POSTGRES_USER="${POSTGRES_USER:-avnadmin}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+POSTGRES_SSLMODE="${POSTGRES_SSLMODE:-require}"
+POSTGRES_IDENTITY_URL="${POSTGRES_IDENTITY_URL:-}"
+POSTGRES_FLEET_URL="${POSTGRES_FLEET_URL:-}"
+POSTGRES_WALLET_URL="${POSTGRES_WALLET_URL:-}"
+POSTGRES_CONTRACT_URL="${POSTGRES_CONTRACT_URL:-}"
+
+if [[ -n "$POSTGRES_HOST" && "$POSTGRES_HOST" != CHANGE_ME_* ]]; then
+  POSTGRES_IDENTITY_URL="${POSTGRES_IDENTITY_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_identity?sslmode=${POSTGRES_SSLMODE}}"
+  POSTGRES_FLEET_URL="${POSTGRES_FLEET_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_fleet?sslmode=${POSTGRES_SSLMODE}}"
+  POSTGRES_WALLET_URL="${POSTGRES_WALLET_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_wallet?sslmode=${POSTGRES_SSLMODE}}"
+  POSTGRES_CONTRACT_URL="${POSTGRES_CONTRACT_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_contract?sslmode=${POSTGRES_SSLMODE}}"
+fi
+
+MONGO_BIDDING_URI="${MONGO_BIDDING_URI:-}"
+MONGO_NOTIFICATION_URI="${MONGO_NOTIFICATION_URI:-}"
+REDIS_URL="${REDIS_URL:-}"
+RABBITMQ_URL="${RABBITMQ_URL:-}"
 
 FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-$PUBLIC_BASE_URL}"
 FRONTEND_LAN_ORIGIN="${FRONTEND_LAN_ORIGIN:-http://localhost:3000}"
@@ -83,14 +224,69 @@ DRIVER_REPLAY_KEY="${DRIVER_REPLAY_KEY:-}"
 ROUTING_BASE_URL="${ROUTING_BASE_URL:-https://router.project-osrm.org}"
 
 # ------------------------------------------------------------------------------
+# Helper tach URI thanh 6 dong: scheme, user, pass, host, port, vhost
+# ------------------------------------------------------------------------------
+url_decode() {
+  local s="${1//\\/\\\\}"
+  printf '%b' "${s//%/\\x}"
+}
+
+parse_uri() {
+  local uri="$1"
+  local default_port="$2"
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import urllib.parse" >/dev/null 2>&1; then
+    python3 - "$uri" "$default_port" <<'PY'
+import sys
+from urllib.parse import urlparse, unquote
+
+u = urlparse(sys.argv[1])
+def_port = sys.argv[2]
+scheme = (u.scheme or "").lower()
+user = unquote(u.username) if u.username is not None else ""
+pw = unquote(u.password) if u.password is not None else ""
+host = u.hostname or ""
+port = str(u.port) if u.port else def_port
+raw_path = u.path[1:] if u.path.startswith("/") else u.path
+vhost = unquote(raw_path) if raw_path else "/"
+for item in (scheme, user, pw, host, port, vhost):
+    print(item)
+PY
+    return
+  fi
+
+  if [[ "$uri" =~ ^([a-zA-Z0-9+.-]+)://(([^:@/?#]*)(:([^@/?#]*))?@)?(\[[^]]+\]|[^:/?#]+)(:([0-9]+))?(/[^?#]*)?([?].*)?$ ]]; then
+    local scheme="${BASH_REMATCH[1],,}"
+    local user
+    local pw
+    user="$(url_decode "${BASH_REMATCH[3]}")"
+    pw="$(url_decode "${BASH_REMATCH[5]}")"
+    local host="${BASH_REMATCH[6]}"
+    local port="${BASH_REMATCH[8]:-$default_port}"
+    local path="${BASH_REMATCH[9]}"
+    local vhost
+    vhost="$(url_decode "${path#/}")"
+    [[ -z "$vhost" ]] && vhost="/"
+    printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$scheme" "$user" "$pw" "$host" "$port" "$vhost"
+  else
+    printf '\n\n\n\n\n\n'
+  fi
+}
+
+# ------------------------------------------------------------------------------
 # Validate bien bat buoc
 # ------------------------------------------------------------------------------
 REQUIRED_VARS=(
   PUBLIC_BASE_URL
+  POSTGRES_USER
   POSTGRES_PASSWORD
-  MONGO_PASSWORD
-  REDIS_PASSWORD
-  RABBITMQ_PASSWORD
+  POSTGRES_IDENTITY_URL
+  POSTGRES_FLEET_URL
+  POSTGRES_WALLET_URL
+  POSTGRES_CONTRACT_URL
+  MONGO_BIDDING_URI
+  MONGO_NOTIFICATION_URI
+  REDIS_URL
+  RABBITMQ_URL
   JWT_SECRET
   INTERNAL_SERVICE_TOKEN
   INTERNAL_WALLET_TOKEN
@@ -101,11 +297,67 @@ REQUIRED_VARS=(
 VALIDATION_FAILED=false
 for var_name in "${REQUIRED_VARS[@]}"; do
   val="${!var_name:-}"
-  if [[ -z "$val" || "$val" == CHANGE_ME_* || "$val" == *"<EC2_PUBLIC_IP>"* ]]; then
+  if [[ -z "$val" || "$val" == CHANGE_ME_* || "$val" == *"<EC2_PUBLIC_IP>"* || "$val" == *"<user>"* || "$val" == *"<pass>"* || "$val" == *"<host>"* ]]; then
     echo "ERROR: Bien bat buoc '$var_name' chua duoc dien hoac van con gia tri mau trong $ENV_FILE" >&2
     VALIDATION_FAILED=true
   fi
 done
+
+for pg_var in POSTGRES_IDENTITY_URL POSTGRES_FLEET_URL POSTGRES_WALLET_URL POSTGRES_CONTRACT_URL; do
+  pg_val="${!pg_var:-}"
+  if [[ -n "$pg_val" && "$pg_val" != jdbc:postgresql://* ]]; then
+    echo "ERROR: $pg_var phai bat dau bang 'jdbc:postgresql://' (hien tai: $pg_val)." >&2
+    VALIDATION_FAILED=true
+  fi
+done
+
+for mongo_var in MONGO_BIDDING_URI MONGO_NOTIFICATION_URI; do
+  mongo_val="${!mongo_var:-}"
+  if [[ -n "$mongo_val" && "$mongo_val" != mongodb://* && "$mongo_val" != mongodb+srv://* ]]; then
+    echo "ERROR: $mongo_var phai bat dau bang 'mongodb://' hoac 'mongodb+srv://'." >&2
+    VALIDATION_FAILED=true
+  fi
+done
+
+if [[ -n "$REDIS_URL" && "$REDIS_URL" != redis://* && "$REDIS_URL" != rediss://* ]]; then
+  echo "ERROR: REDIS_URL phai bat dau bang 'redis://' hoac 'rediss://' (Aiven Valkey dung rediss://)." >&2
+  VALIDATION_FAILED=true
+fi
+
+if [[ -n "$RABBITMQ_URL" && "$RABBITMQ_URL" != amqp://* && "$RABBITMQ_URL" != amqps://* ]]; then
+  echo "ERROR: RABBITMQ_URL phai bat dau bang 'amqp://' hoac 'amqps://' (CloudAMQP dung amqps://)." >&2
+  VALIDATION_FAILED=true
+fi
+
+for int_var in APP_REPLICAS DB_POOL_MAX_SIZE DB_POOL_LIGHT_MAX_SIZE DB_POOL_MIN_IDLE; do
+  int_val="${!int_var:-}"
+  if ! [[ "$int_val" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: $int_var phai la so nguyen duong >= 1 (hien tai: '$int_val')." >&2
+    VALIDATION_FAILED=true
+  fi
+done
+
+if [[ "$DB_POOL_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MAX_SIZE" -lt 2 ]]; then
+  echo "ERROR: DB_POOL_MAX_SIZE phai >= 2 de tranh deadlock khi PostgresAdvisoryLock giu ket noi chay @Scheduled (identity/contract)." >&2
+  VALIDATION_FAILED=true
+fi
+
+if [[ "$DB_POOL_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MIN_IDLE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MIN_IDLE" -gt "$DB_POOL_MAX_SIZE" ]]; then
+  echo "ERROR: DB_POOL_MIN_IDLE ($DB_POOL_MIN_IDLE) khong duoc lon hon DB_POOL_MAX_SIZE ($DB_POOL_MAX_SIZE)." >&2
+  VALIDATION_FAILED=true
+fi
+
+if [[ "$DB_POOL_LIGHT_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MIN_IDLE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MIN_IDLE" -gt "$DB_POOL_LIGHT_MAX_SIZE" ]]; then
+  echo "ERROR: DB_POOL_MIN_IDLE ($DB_POOL_MIN_IDLE) khong duoc lon hon DB_POOL_LIGHT_MAX_SIZE ($DB_POOL_LIGHT_MAX_SIZE)." >&2
+  VALIDATION_FAILED=true
+fi
+
+if [[ "$APP_REPLICAS" =~ ^[1-9][0-9]*$ && "$DB_POOL_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_LIGHT_MAX_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+  EST_MAX_PG_CONNS=$(( APP_REPLICAS * (2 * DB_POOL_MAX_SIZE + 2 * DB_POOL_LIGHT_MAX_SIZE) ))
+  if [[ "$EST_MAX_PG_CONNS" -gt 15 ]]; then
+    echo "WARNING: Tong max connections PostgreSQL uoc tinh = ${EST_MAX_PG_CONNS} (> 15 connection limit cua Aiven Free)." >&2
+  fi
+fi
 
 decode_base64_bytes() {
   local raw="$1"
@@ -151,6 +403,42 @@ if [[ "$VALIDATION_FAILED" == "true" ]]; then
   exit 1
 fi
 
+# Tach REDIS_URL -> cac truong cho api-gateway
+{
+  IFS= read -r REDIS_SCHEME || true
+  IFS= read -r REDIS_USERNAME || true
+  IFS= read -r REDIS_PASSWORD || true
+  IFS= read -r REDIS_HOST || true
+  IFS= read -r REDIS_PORT || true
+  IFS= read -r _ || true
+} < <(parse_uri "$REDIS_URL" "6379")
+
+if [[ -z "$REDIS_HOST" ]]; then
+  echo "ERROR: Khong doc duoc host tu REDIS_URL." >&2
+  exit 1
+fi
+REDIS_SSL_ENABLED="false"
+[[ "$REDIS_SCHEME" == "rediss" ]] && REDIS_SSL_ENABLED="true"
+
+# Tach RABBITMQ_URL -> cac truong cho contract-service
+RABBIT_DEFAULT_PORT="5672"
+[[ "$RABBITMQ_URL" == amqps://* ]] && RABBIT_DEFAULT_PORT="5671"
+{
+  IFS= read -r RABBITMQ_SCHEME || true
+  IFS= read -r RABBITMQ_USER || true
+  IFS= read -r RABBITMQ_PASSWORD || true
+  IFS= read -r RABBITMQ_HOST || true
+  IFS= read -r RABBITMQ_PORT || true
+  IFS= read -r RABBITMQ_VHOST || true
+} < <(parse_uri "$RABBITMQ_URL" "$RABBIT_DEFAULT_PORT")
+
+if [[ -z "$RABBITMQ_HOST" ]]; then
+  echo "ERROR: Khong doc duoc host tu RABBITMQ_URL." >&2
+  exit 1
+fi
+RABBITMQ_SSL_ENABLED="false"
+[[ "$RABBITMQ_SCHEME" == "amqps" ]] && RABBITMQ_SSL_ENABLED="true"
+
 # Canh bao an toan cho cookie HTTP vs HTTPS
 if [[ "$PUBLIC_BASE_URL" == http://* && "$COOKIE_SECURE" == "true" ]]; then
   echo "WARNING: PUBLIC_BASE_URL dung HTTP nhung COOKIE_SECURE=true -> trinh duyet se tu choi luu cookie dang nhap!" >&2
@@ -160,14 +448,17 @@ if [[ "$PUBLIC_BASE_URL" == https://* && "$COOKIE_SECURE" != "true" ]]; then
   echo "WARNING: PUBLIC_BASE_URL dung HTTPS nhung COOKIE_SECURE=$COOKIE_SECURE -> khuyen nghi dat COOKIE_SECURE=true." >&2
 fi
 
-echo "==> [1/6] Tao Namespace '$NAMESPACE'..."
-kubectl apply -f "$K3S_DIR/00-namespace.yaml"
+echo "==> [1/5] Tao Namespace '$NAMESPACE'..."
+kubectl apply -f "$K3S_DIR/base/00-namespace.yaml"
 
-echo "==> [2/6] Cap nhat Secret 'backhaulbid-secrets' (khong ghi secret ra file)..."
-kubectl -n "$NAMESPACE" create secret generic backhaulbid-secrets \
+echo "==> [2/5] Cap nhat Secret 'backhaulbid-secrets'..."
+SECRETS_YAML="$(kubectl -n "$NAMESPACE" create secret generic backhaulbid-secrets \
   --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-  --from-literal=MONGO_PASSWORD="$MONGO_PASSWORD" \
+  --from-literal=MONGO_BIDDING_URI="$MONGO_BIDDING_URI" \
+  --from-literal=MONGO_NOTIFICATION_URI="$MONGO_NOTIFICATION_URI" \
+  --from-literal=REDIS_URL="$REDIS_URL" \
   --from-literal=REDIS_PASSWORD="$REDIS_PASSWORD" \
+  --from-literal=RABBITMQ_URL="$RABBITMQ_URL" \
   --from-literal=RABBITMQ_PASSWORD="$RABBITMQ_PASSWORD" \
   --from-literal=JWT_SECRET="$JWT_SECRET" \
   --from-literal=INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" \
@@ -183,27 +474,51 @@ kubectl -n "$NAMESPACE" create secret generic backhaulbid-secrets \
   --from-literal=EKYC_EVIDENCE_ENCRYPTION_KEY="$EKYC_EVIDENCE_ENCRYPTION_KEY" \
   --from-literal=BUSINESS_LOOKUP_CLIENT_ID="$BUSINESS_LOOKUP_CLIENT_ID" \
   --from-literal=BUSINESS_LOOKUP_API_KEY="$BUSINESS_LOOKUP_API_KEY" \
-  --dry-run=client -o yaml | kubectl apply -f -
+  --dry-run=client -o yaml)"
+printf '%s\n' "$SECRETS_YAML" | kubectl apply -f -
 
-echo "==> [3/6] Cap nhat ConfigMap 'backhaulbid-config'..."
-kubectl -n "$NAMESPACE" create configmap backhaulbid-config \
+USE_PULL_SECRET=false
+if [[ -n "$DOCKERHUB_USERNAME" && -n "$DOCKERHUB_TOKEN" ]]; then
+  echo "    Cap nhat Registry pull secret '${IMAGE_PULL_SECRET_NAME}' (${DOCKERHUB_SERVER})..."
+  kubectl -n "$NAMESPACE" create secret docker-registry "$IMAGE_PULL_SECRET_NAME" \
+    --docker-server="$DOCKERHUB_SERVER" \
+    --docker-username="$DOCKERHUB_USERNAME" \
+    --docker-password="$DOCKERHUB_TOKEN" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  USE_PULL_SECRET=true
+elif kubectl -n "$NAMESPACE" get secret "$IMAGE_PULL_SECRET_NAME" >/dev/null 2>&1; then
+  echo "    Phat hien pull secret '${IMAGE_PULL_SECRET_NAME}' da co san trong cluster -> tu dong gan vao cac Deployment."
+  USE_PULL_SECRET=true
+fi
+
+echo "==> [3/5] Cap nhat ConfigMap 'backhaulbid-config' (External DB + K8s Service DNS)..."
+CONFIG_YAML="$(kubectl -n "$NAMESPACE" create configmap backhaulbid-config \
   --from-literal=POSTGRES_USER="$POSTGRES_USER" \
-  --from-literal=POSTGRES_DB="backhaulbid_identity" \
-  --from-literal=POSTGRES_IDENTITY_URL="jdbc:postgresql://postgres:5432/backhaulbid_identity" \
-  --from-literal=POSTGRES_FLEET_URL="jdbc:postgresql://postgres:5432/backhaulbid_fleet" \
-  --from-literal=POSTGRES_WALLET_URL="jdbc:postgresql://postgres:5432/backhaulbid_wallet" \
-  --from-literal=POSTGRES_CONTRACT_URL="jdbc:postgresql://postgres:5432/backhaulbid_contract" \
-  --from-literal=MONGO_USER="$MONGO_USER" \
-  --from-literal=MONGO_HOST="mongodb" \
-  --from-literal=MONGO_PORT="27017" \
-  --from-literal=MONGO_BIDDING_DATABASE="backhaulbid_bidding" \
-  --from-literal=MONGO_NOTIFICATION_DATABASE="backhaulbid_notification" \
-  --from-literal=REDIS_HOST="redis" \
-  --from-literal=REDIS_PORT="6379" \
+  --from-literal=POSTGRES_IDENTITY_URL="$POSTGRES_IDENTITY_URL" \
+  --from-literal=POSTGRES_FLEET_URL="$POSTGRES_FLEET_URL" \
+  --from-literal=POSTGRES_WALLET_URL="$POSTGRES_WALLET_URL" \
+  --from-literal=POSTGRES_CONTRACT_URL="$POSTGRES_CONTRACT_URL" \
+  --from-literal=DB_POOL_MAX_SIZE="$DB_POOL_MAX_SIZE" \
+  --from-literal=DB_POOL_LIGHT_MAX_SIZE="$DB_POOL_LIGHT_MAX_SIZE" \
+  --from-literal=DB_POOL_MIN_IDLE="$DB_POOL_MIN_IDLE" \
+  --from-literal=REDIS_HOST="$REDIS_HOST" \
+  --from-literal=REDIS_PORT="$REDIS_PORT" \
+  --from-literal=REDIS_USERNAME="$REDIS_USERNAME" \
+  --from-literal=REDIS_SSL_ENABLED="$REDIS_SSL_ENABLED" \
   --from-literal=RABBITMQ_USER="$RABBITMQ_USER" \
-  --from-literal=RABBITMQ_HOST="rabbitmq" \
-  --from-literal=RABBITMQ_PORT="5672" \
-  --from-literal=EUREKA_URL="http://eureka-server:8761/eureka/" \
+  --from-literal=RABBITMQ_HOST="$RABBITMQ_HOST" \
+  --from-literal=RABBITMQ_PORT="$RABBITMQ_PORT" \
+  --from-literal=RABBITMQ_VHOST="$RABBITMQ_VHOST" \
+  --from-literal=RABBITMQ_SSL_ENABLED="$RABBITMQ_SSL_ENABLED" \
+  --from-literal=EUREKA_ENABLED="false" \
+  --from-literal=IDENTITY_GATEWAY_URI="http://identity-service:8080" \
+  --from-literal=FLEET_GATEWAY_URI="http://fleet-service:8080" \
+  --from-literal=WALLET_GATEWAY_URI="http://wallet-service:8080" \
+  --from-literal=CONTRACT_GATEWAY_URI="http://contract-service:8080" \
+  --from-literal=MEDIA_GATEWAY_URI="http://media-service:8080" \
+  --from-literal=BIDDING_GATEWAY_URI="http://bidding-service:3001" \
+  --from-literal=NOTIFICATION_GATEWAY_URI="http://notification-service:3002" \
+  --from-literal=WEB_PORTAL_URI="http://web-portal:3000" \
   --from-literal=INTERNAL_GATEWAY_URL="http://api-gateway:8080" \
   --from-literal=IDENTITY_SERVICE_URL="http://identity-service:8080" \
   --from-literal=FLEET_SERVICE_URL="http://fleet-service:8080" \
@@ -242,78 +557,133 @@ kubectl -n "$NAMESPACE" create configmap backhaulbid-config \
   --from-literal=NFC_EKYC_ENABLED="$NFC_EKYC_ENABLED" \
   --from-literal=EKYC_AUTO_ACCEPT="$EKYC_AUTO_ACCEPT" \
   --from-literal=ROUTING_BASE_URL="$ROUTING_BASE_URL" \
-  --dry-run=client -o yaml | kubectl apply -f -
+  --dry-run=client -o yaml)"
+printf '%s\n' "$CONFIG_YAML" | kubectl apply -f -
 
-echo "==> [4/6] Trien khai tang du lieu (PostgreSQL, MongoDB, Redis, RabbitMQ)..."
-kubectl apply -f "$K3S_DIR/02-postgres.yaml"
-kubectl apply -f "$K3S_DIR/03-mongodb.yaml"
-kubectl apply -f "$K3S_DIR/04-redis.yaml"
-kubectl apply -f "$K3S_DIR/05-rabbitmq.yaml"
+if command -v sha256sum >/dev/null 2>&1; then
+  CONFIG_CHECKSUM="$(printf '%s\n%s' "$SECRETS_YAML" "$CONFIG_YAML" | sha256sum | cut -c1-16)"
+elif command -v shasum >/dev/null 2>&1; then
+  CONFIG_CHECKSUM="$(printf '%s\n%s' "$SECRETS_YAML" "$CONFIG_YAML" | shasum -a 256 | cut -c1-16)"
+else
+  CONFIG_CHECKSUM="$(printf '%s\n%s' "$SECRETS_YAML" "$CONFIG_YAML" | cksum | awk '{print $1}')"
+fi
 
-echo "    Dang cho cac StatefulSet san sang..."
-kubectl -n "$NAMESPACE" rollout status statefulset/postgres --timeout=180s
-kubectl -n "$NAMESPACE" rollout status statefulset/mongodb --timeout=180s
-kubectl -n "$NAMESPACE" rollout status statefulset/redis --timeout=120s
-kubectl -n "$NAMESPACE" rollout status statefulset/rabbitmq --timeout=240s
+# Don eureka-server cu neu cluster tung deploy theo mo hinh cu
+kubectl -n "$NAMESPACE" delete deploy/eureka-server svc/eureka-server --ignore-not-found >/dev/null 2>&1 || true
 
-# Tao overlay tam thoi trong /tmp de override IMAGE_REGISTRY/TAG ma khong lam ban git
+# Nhac neu con StatefulSet DB cu trong cluster (khong tu xoa de bao ve du lieu)
+if kubectl -n "$NAMESPACE" get statefulset postgres mongodb redis rabbitmq >/dev/null 2>&1; then
+  echo "INFO: Phat hien StatefulSet DB cu trong namespace '$NAMESPACE'. Khi da chuyen du lieu sang DB ngoai, co the xoa thu cong de giai phong RAM." >&2
+fi
+
+# Tao Kustomize overlay tam thoi trong /tmp de override registry/prefix/tag/pullPolicy/secrets
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-cp "$K3S_DIR/06-eureka-server.yaml" "$TMP_DIR/"
-cp "$K3S_DIR/07-core-services.yaml" "$TMP_DIR/"
-cp "$K3S_DIR/08-node-services.yaml" "$TMP_DIR/"
-cp "$K3S_DIR/09-web-portal.yaml" "$TMP_DIR/"
-cp "$K3S_DIR/10-api-gateway.yaml" "$TMP_DIR/"
-cp "$K3S_DIR/11-ingress.yaml" "$TMP_DIR/"
+cp -r "$K3S_DIR/base" "$TMP_DIR/base"
+cp -r "$K3S_DIR/overlays" "$TMP_DIR/overlays"
+
+OVERLAY_MODE="http"
+if [[ -f "$TMP_DIR/overlays/tls/kustomization.yaml" && -f "$TMP_DIR/overlays/tls/ingress-tls.yaml" ]]; then
+  OVERLAY_MODE="tls"
+  echo "    Phat hien k3s/overlays/tls -> su dung overlay HTTPS TLS..."
+fi
 
 cat > "$TMP_DIR/kustomization.yaml" <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ${NAMESPACE}
 resources:
-  - 06-eureka-server.yaml
-  - 07-core-services.yaml
-  - 08-node-services.yaml
-  - 09-web-portal.yaml
-  - 10-api-gateway.yaml
-  - 11-ingress.yaml
+  - overlays/${OVERLAY_MODE}
 images:
-  - name: backhaulbid/eureka-server
-    newName: ${IMAGE_REGISTRY}/eureka-server
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/identity-service
-    newName: ${IMAGE_REGISTRY}/identity-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/fleet-service
-    newName: ${IMAGE_REGISTRY}/fleet-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/wallet-service
-    newName: ${IMAGE_REGISTRY}/wallet-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/contract-service
-    newName: ${IMAGE_REGISTRY}/contract-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/media-service
-    newName: ${IMAGE_REGISTRY}/media-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/bidding-service
-    newName: ${IMAGE_REGISTRY}/bidding-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/notification-service
-    newName: ${IMAGE_REGISTRY}/notification-service
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/web-portal
-    newName: ${IMAGE_REGISTRY}/web-portal
-    newTag: "${IMAGE_TAG}"
-  - name: backhaulbid/api-gateway
-    newName: ${IMAGE_REGISTRY}/api-gateway
-    newTag: "${IMAGE_TAG}"
 EOF
 
-if [[ -n "$INGRESS_HOST" && ! -f "$K3S_DIR/11-ingress-tls.yaml" ]]; then
+for svc in "${ALL_SERVICES[@]}"; do
+  svc_name="${IMAGE_REGISTRY}/${IMAGE_PREFIX}${svc}"
+  svc_tag="${IMAGE_TAG}"
+  if [[ "$PARTIAL_DEPLOY" == "true" && ",${TARGET_SERVICES_CSV}," != *",${svc},"* ]]; then
+    cur_img="$(kubectl -n "$NAMESPACE" get deploy "$svc" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+    if [[ -z "$cur_img" ]]; then
+      echo "ERROR: Khong tim thay Deployment '$svc' trong namespace '$NAMESPACE' khi deploy mot phan (--services ${TARGET_SERVICES_CSV}). Lan deploy dau tien hay dung '--services all'." >&2
+      exit 1
+    fi
+    if [[ "$cur_img" == *:* && "${cur_img##*:}" != */* ]]; then
+      svc_name="${cur_img%:*}"
+      svc_tag="${cur_img##*:}"
+    else
+      svc_name="$cur_img"
+      svc_tag=""
+    fi
+  fi
   cat >> "$TMP_DIR/kustomization.yaml" <<EOF
-patches:
+  - name: backhaulbid/${svc}
+    newName: ${svc_name}
+EOF
+  if [[ -n "$svc_tag" ]]; then
+    cat >> "$TMP_DIR/kustomization.yaml" <<EOF
+    newTag: "${svc_tag}"
+EOF
+  fi
+done
+
+HAS_PATCHES=false
+append_patches_header() {
+  if [[ "$HAS_PATCHES" == "false" ]]; then
+    echo "patches:" >> "$TMP_DIR/kustomization.yaml"
+    HAS_PATCHES=true
+  fi
+}
+
+append_patches_header
+cat >> "$TMP_DIR/kustomization.yaml" <<EOF
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          backhaulbid.vn/config-checksum: "${CONFIG_CHECKSUM}"
+EOF
+
+if [[ "$IMAGE_PULL_POLICY" != "IfNotPresent" ]]; then
+  append_patches_header
+  cat >> "$TMP_DIR/kustomization.yaml" <<EOF
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: ${IMAGE_PULL_POLICY}
+EOF
+fi
+
+if [[ "$APP_REPLICAS" != "2" ]]; then
+  append_patches_header
+  cat >> "$TMP_DIR/kustomization.yaml" <<EOF
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: ${APP_REPLICAS}
+EOF
+fi
+
+if [[ "$USE_PULL_SECRET" == "true" ]]; then
+  append_patches_header
+  cat >> "$TMP_DIR/kustomization.yaml" <<EOF
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: ${IMAGE_PULL_SECRET_NAME}
+EOF
+fi
+
+if [[ "$OVERLAY_MODE" == "http" && -n "$INGRESS_HOST" ]]; then
+  append_patches_header
+  cat >> "$TMP_DIR/kustomization.yaml" <<EOF
   - target:
       kind: Ingress
       name: backhaulbid-ingress
@@ -324,16 +694,10 @@ patches:
 EOF
 fi
 
-echo "==> [5/6] Trien khai Eureka Server & cac microservices (${IMAGE_REGISTRY}/*:${IMAGE_TAG})..."
+echo "==> [4/5] Trien khai Kustomize overlay '${OVERLAY_MODE}' (${IMAGE_REGISTRY}/${IMAGE_PREFIX}*:${IMAGE_TAG}, pullPolicy=${IMAGE_PULL_POLICY})..."
 kubectl apply -k "$TMP_DIR"
 
-if [[ -f "$K3S_DIR/11-ingress-tls.yaml" ]]; then
-  echo "    Phat hien k3s/11-ingress-tls.yaml -> ap dung cau hinh HTTPS TLS..."
-  kubectl apply -f "$K3S_DIR/11-ingress-tls.yaml"
-fi
-
-echo "==> [6/6] Dang cho cac Deployment san sang (co the mat 1-3 phut)..."
-kubectl -n "$NAMESPACE" rollout status deploy/eureka-server --timeout=240s
+echo "==> [5/5] Dang cho 9 stateless Deployment san sang (co the mat 1-3 phut)..."
 for deploy in identity-service fleet-service wallet-service contract-service media-service bidding-service notification-service web-portal api-gateway; do
   kubectl -n "$NAMESPACE" rollout status "deploy/${deploy}" --timeout=300s
 done
@@ -342,6 +706,11 @@ echo ""
 echo "=============================================================================="
 echo "TRIEN KHAI BACKHAULBID LEN K3S THANH CONG!"
 echo "  Dia chi truy cap: ${PUBLIC_BASE_URL}"
+echo "  Image tag       : ${IMAGE_REGISTRY}/${IMAGE_PREFIX}*:${IMAGE_TAG}"
+echo "  Replicas        : ${APP_REPLICAS} (DB pool lock=${DB_POOL_MAX_SIZE}/pod, light=${DB_POOL_LIGHT_MAX_SIZE}/pod, min-idle=${DB_POOL_MIN_IDLE}/pod)"
+echo "  Postgres host   : ${POSTGRES_HOST:-custom-urls} (ssl=${POSTGRES_SSLMODE})"
+echo "  Valkey/Redis    : ${REDIS_HOST}:${REDIS_PORT} (tls=${REDIS_SSL_ENABLED})"
+echo "  RabbitMQ        : ${RABBITMQ_HOST}:${RABBITMQ_PORT}/${RABBITMQ_VHOST} (tls=${RABBITMQ_SSL_ENABLED})"
 echo "  Kiem tra Pods   : kubectl -n ${NAMESPACE} get pods -o wide"
 echo "  Kiem tra Ingress: kubectl -n ${NAMESPACE} get ingress"
 echo "=============================================================================="

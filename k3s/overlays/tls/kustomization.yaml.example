@@ -1,0 +1,15 @@
+# ==============================================================================
+# Tuy chon: Kustomize Overlay cho HTTPS (Let's Encrypt)
+#
+# Cach dung:
+#   1. Copy file nay thanh kustomization.yaml (cung thu muc) va
+#      ingress-tls.yaml.example thanh ingress-tls.yaml (da nam trong .gitignore).
+#   2. Thay YOUR_EMAIL va YOUR_DOMAIN trong ingress-tls.yaml.
+#   3. Chay ./k3s/scripts/deploy.sh (script se tu dong phat hien overlays/tls).
+# ==============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - ingress-tls.yaml
