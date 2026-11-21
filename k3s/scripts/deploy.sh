@@ -99,7 +99,7 @@ IMAGE_TAG="${CLI_TAG:-${ENV_OVERRIDE_TAG:-${IMAGE_TAG:-auto}}}"
 IMAGE_PULL_POLICY="${ENV_OVERRIDE_PULL_POLICY:-${IMAGE_PULL_POLICY:-}}"
 APP_REPLICAS="${ENV_OVERRIDE_REPLICAS:-${APP_REPLICAS:-2}}"
 DB_POOL_MAX_SIZE="${DB_POOL_MAX_SIZE:-2}"
-DB_POOL_LIGHT_MAX_SIZE="${DB_POOL_LIGHT_MAX_SIZE:-1}"
+DB_POOL_LIGHT_MAX_SIZE="${DB_POOL_LIGHT_MAX_SIZE:-2}"
 DB_POOL_MIN_IDLE="${DB_POOL_MIN_IDLE:-1}"
 DEPLOY_SERVICES="${CLI_SERVICES:-${ENV_OVERRIDE_SERVICES:-all}}"
 
@@ -338,6 +338,11 @@ done
 
 if [[ "$DB_POOL_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MAX_SIZE" -lt 2 ]]; then
   echo "ERROR: DB_POOL_MAX_SIZE phai >= 2 de tranh deadlock khi PostgresAdvisoryLock giu ket noi chay @Scheduled (identity/contract)." >&2
+  VALIDATION_FAILED=true
+fi
+
+if [[ "$DB_POOL_LIGHT_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_LIGHT_MAX_SIZE" -lt 2 ]]; then
+  echo "ERROR: DB_POOL_LIGHT_MAX_SIZE phai >= 2 de tranh deadlock khi Flyway migration giu lock PostgreSQL (fleet/wallet)." >&2
   VALIDATION_FAILED=true
 fi
 
