@@ -94,10 +94,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-set -a
 # shellcheck source=/dev/null
-source "$ENV_FILE"
-set +a
+source "$SCRIPT_DIR/_load-env.sh"
+load_env_file "$ENV_FILE"
 
 # Ap dung uu tien: CLI flag > env truyen tu shell > gia tri trong .env.k3s > mac dinh
 IMAGE_REGISTRY="${ENV_OVERRIDE_REGISTRY:-${IMAGE_REGISTRY:-backhaulbid}}"
