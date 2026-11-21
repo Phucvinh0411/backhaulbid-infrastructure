@@ -428,6 +428,7 @@ jobs:
           fi
 
           cd "${RESOLVED_DIR}"
+          git config core.fileMode false
           if git status --porcelain | grep -q .; then
             echo "WARNING: EC2 repo has uncommitted changes; skipping git pull and using current files." >&2
           else
