@@ -165,17 +165,18 @@ POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_USER="${POSTGRES_USER:-avnadmin}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
 POSTGRES_SSLMODE="${POSTGRES_SSLMODE:-require}"
-POSTGRES_IDENTITY_URL="${POSTGRES_IDENTITY_URL:-}"
-POSTGRES_FLEET_URL="${POSTGRES_FLEET_URL:-}"
-POSTGRES_WALLET_URL="${POSTGRES_WALLET_URL:-}"
-POSTGRES_CONTRACT_URL="${POSTGRES_CONTRACT_URL:-}"
-
-if [[ -n "$POSTGRES_HOST" && "$POSTGRES_HOST" != CHANGE_ME_* ]]; then
-  POSTGRES_IDENTITY_URL="${POSTGRES_IDENTITY_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_identity?sslmode=${POSTGRES_SSLMODE}}"
-  POSTGRES_FLEET_URL="${POSTGRES_FLEET_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_fleet?sslmode=${POSTGRES_SSLMODE}}"
-  POSTGRES_WALLET_URL="${POSTGRES_WALLET_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_wallet?sslmode=${POSTGRES_SSLMODE}}"
-  POSTGRES_CONTRACT_URL="${POSTGRES_CONTRACT_URL:-jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/backhaulbid_contract?sslmode=${POSTGRES_SSLMODE}}"
-fi
+POSTGRES_IDENTITY_URL="${POSTGRES_IDENTITY_URL:-${POSTGRES_IDENTITY_URI:-}}"
+POSTGRES_IDENTITY_USER="${POSTGRES_IDENTITY_USER:-}"
+POSTGRES_IDENTITY_PASSWORD="${POSTGRES_IDENTITY_PASSWORD:-}"
+POSTGRES_FLEET_URL="${POSTGRES_FLEET_URL:-${POSTGRES_FLEET_URI:-}}"
+POSTGRES_FLEET_USER="${POSTGRES_FLEET_USER:-}"
+POSTGRES_FLEET_PASSWORD="${POSTGRES_FLEET_PASSWORD:-}"
+POSTGRES_WALLET_URL="${POSTGRES_WALLET_URL:-${POSTGRES_WALLET_URI:-}}"
+POSTGRES_WALLET_USER="${POSTGRES_WALLET_USER:-}"
+POSTGRES_WALLET_PASSWORD="${POSTGRES_WALLET_PASSWORD:-}"
+POSTGRES_CONTRACT_URL="${POSTGRES_CONTRACT_URL:-${POSTGRES_CONTRACT_URI:-}}"
+POSTGRES_CONTRACT_USER="${POSTGRES_CONTRACT_USER:-}"
+POSTGRES_CONTRACT_PASSWORD="${POSTGRES_CONTRACT_PASSWORD:-}"
 
 MONGO_BIDDING_URI="${MONGO_BIDDING_URI:-}"
 MONGO_NOTIFICATION_URI="${MONGO_NOTIFICATION_URI:-}"
@@ -217,6 +218,7 @@ GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
 NFC_EKYC_ENABLED="${NFC_EKYC_ENABLED:-false}"
 EKYC_EVIDENCE_ENCRYPTION_KEY="${EKYC_EVIDENCE_ENCRYPTION_KEY:-}"
 EKYC_AUTO_ACCEPT="${EKYC_AUTO_ACCEPT:-COMPLETED_ONLY}"
+IDENTITY_SPRING_PROFILES_ACTIVE="${IDENTITY_SPRING_PROFILES_ACTIVE:-}"
 BUSINESS_LOOKUP_CLIENT_ID="${BUSINESS_LOOKUP_CLIENT_ID:-}"
 BUSINESS_LOOKUP_API_KEY="${BUSINESS_LOOKUP_API_KEY:-}"
 DRIVER_REPLAY_KEY="${DRIVER_REPLAY_KEY:-}"
@@ -271,17 +273,103 @@ PY
   fi
 }
 
+parse_pg_uri() {
+  local uri="$1"
+  local default_sslmode="$2"
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import urllib.parse" >/dev/null 2>&1; then
+    python3 - "$uri" "$default_sslmode" <<'PY'
+import sys
+from urllib.parse import urlparse, unquote, parse_qsl
+
+u = urlparse(sys.argv[1])
+sslmode = sys.argv[2]
+host = u.hostname or ""
+port = str(u.port or 5432)
+db = (u.path or "/defaultdb").lstrip("/") or "defaultdb"
+user = unquote(u.username) if u.username is not None else ""
+pw = unquote(u.password) if u.password is not None else ""
+query_pairs = parse_qsl(u.query, keep_blank_values=True)
+has_sslmode = any(k.lower() == "sslmode" for k, _ in query_pairs)
+query = u.query
+if not has_sslmode and sslmode:
+    query = f"{query}&sslmode={sslmode}" if query else f"sslmode={sslmode}"
+host_part = f"[{host}]" if ":" in host else host
+jdbc = f"jdbc:postgresql://{host_part}:{port}/{db}" + (f"?{query}" if query else "")
+for item in (jdbc, user, pw):
+    print(item)
+PY
+    return
+  fi
+
+  local scheme user pw host port vhost
+  mapfile -t _pg_parts < <(parse_uri "$uri" 5432)
+  user="${_pg_parts[1]:-}"
+  pw="${_pg_parts[2]:-}"
+  host="${_pg_parts[3]:-}"
+  port="${_pg_parts[4]:-5432}"
+  vhost="${_pg_parts[5]:-/}"
+  local db="${vhost#/}"
+  [[ -z "$db" || "$db" == "/" ]] && db="defaultdb"
+  local query=""
+  [[ "$uri" == *\?* ]] && query="${uri#*\?}"
+  if [[ -n "$default_sslmode" && ! "$query" =~ (^|&)sslmode= ]]; then
+    query="${query:+${query}&}sslmode=${default_sslmode}"
+  fi
+  local host_part="$host"
+  [[ "$host_part" == *:* ]] && host_part="[${host_part}]"
+  local jdbc="jdbc:postgresql://${host_part}:${port}/${db}${query:+?${query}}"
+  printf '%s\n%s\n%s\n' "$jdbc" "$user" "$pw"
+}
+
+resolve_pg_target() {
+  local svc_key="$1"
+  local default_db="$2"
+  local url_var="POSTGRES_${svc_key}_URL"
+  local user_var="POSTGRES_${svc_key}_USER"
+  local pass_var="POSTGRES_${svc_key}_PASSWORD"
+
+  local raw_url="${!url_var:-}"
+  local cur_user="${!user_var:-}"
+  local cur_pass="${!pass_var:-}"
+
+  if [[ "$raw_url" == postgres://* || "$raw_url" == postgresql://* ]]; then
+    mapfile -t _resolved < <(parse_pg_uri "$raw_url" "$POSTGRES_SSLMODE")
+    raw_url="${_resolved[0]:-}"
+    cur_user="${cur_user:-${_resolved[1]:-}}"
+    cur_pass="${cur_pass:-${_resolved[2]:-}}"
+  elif [[ -z "$raw_url" && -n "$POSTGRES_HOST" && "$POSTGRES_HOST" != CHANGE_ME_* ]]; then
+    raw_url="jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${default_db}?sslmode=${POSTGRES_SSLMODE}"
+  fi
+
+  cur_user="${cur_user:-$POSTGRES_USER}"
+  cur_pass="${cur_pass:-$POSTGRES_PASSWORD}"
+  printf -v "$url_var" '%s' "$raw_url"
+  printf -v "$user_var" '%s' "$cur_user"
+  printf -v "$pass_var" '%s' "$cur_pass"
+}
+
+resolve_pg_target IDENTITY backhaulbid_identity
+resolve_pg_target FLEET backhaulbid_fleet
+resolve_pg_target WALLET backhaulbid_wallet
+resolve_pg_target CONTRACT backhaulbid_contract
+
 # ------------------------------------------------------------------------------
 # Validate bien bat buoc
 # ------------------------------------------------------------------------------
 REQUIRED_VARS=(
   PUBLIC_BASE_URL
-  POSTGRES_USER
-  POSTGRES_PASSWORD
   POSTGRES_IDENTITY_URL
+  POSTGRES_IDENTITY_USER
+  POSTGRES_IDENTITY_PASSWORD
   POSTGRES_FLEET_URL
+  POSTGRES_FLEET_USER
+  POSTGRES_FLEET_PASSWORD
   POSTGRES_WALLET_URL
+  POSTGRES_WALLET_USER
+  POSTGRES_WALLET_PASSWORD
   POSTGRES_CONTRACT_URL
+  POSTGRES_CONTRACT_USER
+  POSTGRES_CONTRACT_PASSWORD
   MONGO_BIDDING_URI
   MONGO_NOTIFICATION_URI
   REDIS_URL
@@ -357,10 +445,28 @@ if [[ "$DB_POOL_LIGHT_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_MIN_IDLE" =~ ^[1-9
 fi
 
 if [[ "$APP_REPLICAS" =~ ^[1-9][0-9]*$ && "$DB_POOL_MAX_SIZE" =~ ^[1-9][0-9]*$ && "$DB_POOL_LIGHT_MAX_SIZE" =~ ^[1-9][0-9]*$ ]]; then
-  EST_MAX_PG_CONNS=$(( APP_REPLICAS * (2 * DB_POOL_MAX_SIZE + 2 * DB_POOL_LIGHT_MAX_SIZE) ))
-  if [[ "$EST_MAX_PG_CONNS" -gt 15 ]]; then
-    echo "WARNING: Tong max connections PostgreSQL uoc tinh = ${EST_MAX_PG_CONNS} (> 15 connection limit cua Aiven Free)." >&2
-  fi
+  declare -A PG_HOST_CONNS=()
+  add_pg_host_conns() {
+    local jdbc_url="$1"
+    local svc_pool_max="$2"
+    local host_port="unknown"
+    if [[ "$jdbc_url" =~ ^jdbc:postgresql://(\[[^]]+\]|[^:/?#]+)(:([0-9]+))?(/|\?|$) ]]; then
+      local h="${BASH_REMATCH[1]}"
+      local p="${BASH_REMATCH[3]:-5432}"
+      host_port="${h}:${p}"
+    fi
+    PG_HOST_CONNS["$host_port"]=$(( ${PG_HOST_CONNS["$host_port"]:-0} + APP_REPLICAS * svc_pool_max ))
+  }
+  add_pg_host_conns "$POSTGRES_IDENTITY_URL" "$DB_POOL_MAX_SIZE"
+  add_pg_host_conns "$POSTGRES_CONTRACT_URL" "$DB_POOL_MAX_SIZE"
+  add_pg_host_conns "$POSTGRES_FLEET_URL" "$DB_POOL_LIGHT_MAX_SIZE"
+  add_pg_host_conns "$POSTGRES_WALLET_URL" "$DB_POOL_LIGHT_MAX_SIZE"
+  for pg_host_port in "${!PG_HOST_CONNS[@]}"; do
+    host_max="${PG_HOST_CONNS[$pg_host_port]}"
+    if [[ "$host_max" -gt 15 ]]; then
+      echo "WARNING: Postgres host '${pg_host_port}' co tong max connections uoc tinh = ${host_max} (> 15 connection limit cua Aiven Free)." >&2
+    fi
+  done
 fi
 
 decode_base64_bytes() {
@@ -458,6 +564,10 @@ kubectl apply -f "$K3S_DIR/base/00-namespace.yaml"
 echo "==> [2/5] Cap nhat Secret 'backhaulbid-secrets'..."
 SECRETS_YAML="$(kubectl -n "$NAMESPACE" create secret generic backhaulbid-secrets \
   --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+  --from-literal=POSTGRES_IDENTITY_PASSWORD="$POSTGRES_IDENTITY_PASSWORD" \
+  --from-literal=POSTGRES_FLEET_PASSWORD="$POSTGRES_FLEET_PASSWORD" \
+  --from-literal=POSTGRES_WALLET_PASSWORD="$POSTGRES_WALLET_PASSWORD" \
+  --from-literal=POSTGRES_CONTRACT_PASSWORD="$POSTGRES_CONTRACT_PASSWORD" \
   --from-literal=MONGO_BIDDING_URI="$MONGO_BIDDING_URI" \
   --from-literal=MONGO_NOTIFICATION_URI="$MONGO_NOTIFICATION_URI" \
   --from-literal=REDIS_URL="$REDIS_URL" \
@@ -499,9 +609,13 @@ echo "==> [3/5] Cap nhat ConfigMap 'backhaulbid-config' (External DB + K8s Servi
 CONFIG_YAML="$(kubectl -n "$NAMESPACE" create configmap backhaulbid-config \
   --from-literal=POSTGRES_USER="$POSTGRES_USER" \
   --from-literal=POSTGRES_IDENTITY_URL="$POSTGRES_IDENTITY_URL" \
+  --from-literal=POSTGRES_IDENTITY_USER="$POSTGRES_IDENTITY_USER" \
   --from-literal=POSTGRES_FLEET_URL="$POSTGRES_FLEET_URL" \
+  --from-literal=POSTGRES_FLEET_USER="$POSTGRES_FLEET_USER" \
   --from-literal=POSTGRES_WALLET_URL="$POSTGRES_WALLET_URL" \
+  --from-literal=POSTGRES_WALLET_USER="$POSTGRES_WALLET_USER" \
   --from-literal=POSTGRES_CONTRACT_URL="$POSTGRES_CONTRACT_URL" \
+  --from-literal=POSTGRES_CONTRACT_USER="$POSTGRES_CONTRACT_USER" \
   --from-literal=DB_POOL_MAX_SIZE="$DB_POOL_MAX_SIZE" \
   --from-literal=DB_POOL_LIGHT_MAX_SIZE="$DB_POOL_LIGHT_MAX_SIZE" \
   --from-literal=DB_POOL_MIN_IDLE="$DB_POOL_MIN_IDLE" \
@@ -560,6 +674,7 @@ CONFIG_YAML="$(kubectl -n "$NAMESPACE" create configmap backhaulbid-config \
   --from-literal=GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
   --from-literal=NFC_EKYC_ENABLED="$NFC_EKYC_ENABLED" \
   --from-literal=EKYC_AUTO_ACCEPT="$EKYC_AUTO_ACCEPT" \
+  --from-literal=IDENTITY_SPRING_PROFILES_ACTIVE="$IDENTITY_SPRING_PROFILES_ACTIVE" \
   --from-literal=ROUTING_BASE_URL="$ROUTING_BASE_URL" \
   --dry-run=client -o yaml)"
 printf '%s\n' "$CONFIG_YAML" | kubectl apply -f -
@@ -712,7 +827,7 @@ echo "TRIEN KHAI BACKHAULBID LEN K3S THANH CONG!"
 echo "  Dia chi truy cap: ${PUBLIC_BASE_URL}"
 echo "  Image tag       : ${IMAGE_REGISTRY}/${IMAGE_PREFIX}*:${IMAGE_TAG}"
 echo "  Replicas        : ${APP_REPLICAS} (DB pool lock=${DB_POOL_MAX_SIZE}/pod, light=${DB_POOL_LIGHT_MAX_SIZE}/pod, min-idle=${DB_POOL_MIN_IDLE}/pod)"
-echo "  Postgres host   : ${POSTGRES_HOST:-custom-urls} (ssl=${POSTGRES_SSLMODE})"
+echo "  Postgres hosts  : $(IFS=', '; echo "${!PG_HOST_CONNS[*]}") (ssl=${POSTGRES_SSLMODE})"
 echo "  Valkey/Redis    : ${REDIS_HOST}:${REDIS_PORT} (tls=${REDIS_SSL_ENABLED})"
 echo "  RabbitMQ        : ${RABBITMQ_HOST}:${RABBITMQ_PORT}/${RABBITMQ_VHOST} (tls=${RABBITMQ_SSL_ENABLED})"
 echo "  Kiem tra Pods   : kubectl -n ${NAMESPACE} get pods -o wide"

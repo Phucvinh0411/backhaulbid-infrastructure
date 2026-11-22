@@ -93,12 +93,12 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: POSTGRES_USER
+                  key: POSTGRES_IDENTITY_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_IDENTITY_PASSWORD
             - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
@@ -139,6 +139,11 @@ spec:
                 configMapKeyRef:
                   name: backhaulbid-config
                   key: EKYC_AUTO_ACCEPT
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: IDENTITY_SPRING_PROFILES_ACTIVE
             - name: EKYC_EVIDENCE_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
@@ -293,12 +298,12 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: POSTGRES_USER
+                  key: POSTGRES_FLEET_USER
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_FLEET_PASSWORD
             - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
@@ -319,6 +324,11 @@ spec:
                 configMapKeyRef:
                   name: backhaulbid-config
                   key: IDENTITY_SERVICE_URL
+            - name: MEDIA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MEDIA_SERVICE_URL
             - name: INTERNAL_SERVICE_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -443,12 +453,12 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: POSTGRES_USER
+                  key: POSTGRES_WALLET_USER
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_WALLET_PASSWORD
             - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
@@ -643,12 +653,12 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: backhaulbid-config
-                  key: POSTGRES_USER
+                  key: POSTGRES_CONTRACT_USER
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: backhaulbid-secrets
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_CONTRACT_PASSWORD
             - name: DB_POOL_MAX_SIZE
               valueFrom:
                 configMapKeyRef:
