@@ -184,6 +184,51 @@ spec:
                 configMapKeyRef:
                   name: backhaulbid-config
                   key: GOOGLE_CLIENT_ID
+            - name: IDENTITY_EMAIL_OTP_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: CONTRACT_OTP_MAIL_ENABLED
+            - name: MAIL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_HOST
+            - name: MAIL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_PORT
+            - name: MAIL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: MAIL_USERNAME
+            - name: MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: MAIL_PASSWORD
+            - name: MAIL_FROM
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_FROM
+            - name: MAIL_FROM_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_FROM_NAME
+            - name: MAIL_SMTP_AUTH
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_SMTP_AUTH
+            - name: MAIL_SMTP_STARTTLS
+              valueFrom:
+                configMapKeyRef:
+                  name: backhaulbid-config
+                  key: MAIL_SMTP_STARTTLS
           resources:
             requests:
               cpu: 50m
