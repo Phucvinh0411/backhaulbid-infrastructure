@@ -283,6 +283,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       EUREKA_URL: ${EUREKA_URL:-http://eureka-server:8761/eureka/}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}}
+      INTERNAL_WALLET_TOKEN: ${INTERNAL_WALLET_TOKEN:?INTERNAL_WALLET_TOKEN is required}
       # Private claim evidence is read through media-service's token-protected internal endpoint only.
       MEDIA_SERVICE_URL: ${MEDIA_SERVICE_URL:-http://media-service:8080}
       WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:8080}

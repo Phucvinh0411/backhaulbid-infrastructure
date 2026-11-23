@@ -679,6 +679,11 @@ spec:
                 secretKeyRef:
                   name: backhaulbid-secrets
                   key: INTERNAL_SERVICE_TOKEN
+            - name: INTERNAL_WALLET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backhaulbid-secrets
+                  key: INTERNAL_WALLET_TOKEN
             - name: MEDIA_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
